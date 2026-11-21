@@ -1,0 +1,13 @@
+{
+  "_readme": "Crew roster = the departments of the Rovi Here operation. status: active | standby | offline.",
+  "note": "The Blue Mold runs on one observer, one raven, and a crew of AI drones. Every transmission is approved by the captain before it leaves the ship.",
+  "crew": [
+    { "id": "captain", "rank": "CAPTAIN", "name": "Rovi Here", "station": "Command", "desc": "Grey observer from Sector Andromeda. Roughly 50 cycles in Earth orbit. Sets the course, signs every file.", "status": "active" },
+    { "id": "shadow", "rank": "FIRST OFFICER", "name": "Shadow", "station": "Recon", "desc": "Cybernetic raven. Glowing blue optics, metallic feathers, opinions. Sits on the captain's right shoulder.", "status": "active" },
+    { "id": "youtube", "rank": "TRANSMISSION DECK", "name": "YouTube Drone", "station": "Broadcast", "desc": "Produces Rovi on Earth Files and the Blue Mold music line.", "status": "active" },
+    { "id": "x", "rank": "SIGNAL OFFICER", "name": "X Drone", "station": "Surface Relay", "desc": "Rovi's voice on X: field reports and cold commentary.", "status": "active" },
+    { "id": "tiktok", "rank": "TRADE LIAISON", "name": "TikTok Drone", "station": "Market Uplink", "desc": "Short-form transmissions and TikTok Shop scouting.", "status": "active" },
+    { "id": "ideas", "rank": "R&D", "name": "Ideas Lab", "station": "Research", "desc": "Scans for new routes: books, merch, support channels.", "status": "active" },
+    { "id": "studio", "rank": "ENGINEERING", "name": "Tech & Studio", "station": "Engine Room", "desc": "Avatars, banners, visuals, and this bridge.", "status": "active" }
+  ]
+}

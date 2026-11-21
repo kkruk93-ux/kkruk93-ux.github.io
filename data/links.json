@@ -1,0 +1,70 @@
+{
+  "_readme": "Comms + merch links. placeholder:true = not a real/final URL yet (the site shows a PLACEHOLDER/OFFLINE badge). show:false hides an entry.",
+  "channels": [
+    {
+      "id": "youtube",
+      "name": "YouTube",
+      "handle": "@RoviHere",
+      "url": "https://www.youtube.com/@RoviHere",
+      "desc": "Rovi on Earth Files (daily UFO/UAP case Shorts) and Blue Mold music.",
+      "placeholder": false,
+      "show": true
+    },
+    {
+      "id": "x",
+      "name": "X",
+      "handle": "@RoviHere",
+      "url": "https://x.com/RoviHere",
+      "desc": "Field reports from the planet's surface. Cynical, analytical, daily.",
+      "placeholder": false,
+      "show": true
+    },
+    {
+      "id": "tiktok",
+      "name": "TikTok",
+      "handle": "@roviheree",
+      "url": "https://www.tiktok.com/@roviheree",
+      "desc": "Short transmissions for the scrolling bipeds.",
+      "placeholder": false,
+      "show": true
+    },
+    {
+      "id": "kofi",
+      "name": "Ko-fi",
+      "handle": "Support the Blue Mold mission",
+      "url": "https://ko-fi.com/",
+      "desc": "Fuel for the ship. Channel not opened yet.",
+      "placeholder": true,
+      "show": false
+    }
+  ],
+  "merch": {
+    "status": "sealed",
+    "store_name": "Rovi Here Spreadshop",
+    "url": "https://www.spreadshop.com/",
+    "placeholder": true,
+    "teaser": "Cargo bay is sealed. Official Rovi Here merch (Spreadshop) is being loaded: the Analytical Module, Shadow, and the file-or-nothing doctrine, printed on Earth textiles.",
+    "items": [
+      {
+        "name": "Analytical Module: Active",
+        "kind": "Tee / Hoodie",
+        "status": "loading"
+      },
+      {
+        "name": "Shadow // Recon Unit",
+        "kind": "Tee / Mug",
+        "status": "loading"
+      },
+      {
+        "name": "The file or nothing.",
+        "kind": "Sticker / Poster",
+        "status": "loading"
+      }
+    ]
+  },
+  "legal": {
+    "_note": "Set imprint_url / privacy_url once you have an Impressum and privacy page (likely required in Germany for a commercial creator site). null = links hidden.",
+    "imprint_url": "impressum.html",
+    "privacy_url": "impressum.html#datenschutz"
+  }
+}

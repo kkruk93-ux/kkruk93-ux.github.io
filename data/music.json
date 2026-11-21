@@ -1,0 +1,9 @@
+{
+  "_readme": "Blue Mold music. status: released | production. url = direct link when known (otherwise a YouTube search on the channel).",
+  "intro": "Blue Mold is a sci-fi horror story about an infection aboard a starship, and its soundtrack: melodic metalcore nightmare fuel.",
+  "tracks": [
+    { "title": "Blue Mold", "subtitle": "Official Music Video (Space Infection)", "date": "2026-03", "genre": "Sci-fi horror metalcore", "status": "released", "url": "https://www.youtube.com/@RoviHere/search?query=Blue%20Mold" },
+    { "title": "Rovi & Shadow: Ghost-White Fingers", "subtitle": "Official Audio", "date": "2026-05", "genre": "Sci-fi noir metalcore", "status": "released", "url": "https://www.youtube.com/@RoviHere/search?query=Ghost-White%20Fingers" },
+    { "title": "Quarantine Signal", "subtitle": "Incoming transmission", "date": "2026-10", "genre": "Melodic metalcore", "status": "production", "url": null }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "_readme": "Rovi on Earth Files: one real, documented UFO/UAP case per episode. status: archived (published) | incoming (planned). Add url when the Short is live.",
+  "intro": "One real, documented UFO/UAP case per file. The facts are on the record. Only the observer is fictional. Probably.",
+  "files": [
+    { "no": 1, "case": "Roswell", "place": "New Mexico, USA", "year": "1947", "status": "archived" },
+    { "no": 2, "case": "Phoenix Lights", "place": "Arizona, USA", "year": "1997", "status": "archived" },
+    { "no": 3, "case": "Rendlesham Forest", "place": "Suffolk, England", "year": "1980", "status": "archived" },
+    { "no": 4, "case": "Belgian UFO wave", "place": "Belgium", "year": "1989–90", "status": "archived" },
+    { "no": 5, "case": "Varginha", "place": "Minas Gerais, Brazil", "year": "1996", "status": "archived" },
+    { "no": 6, "case": "Kenneth Arnold sighting", "place": "Mount Rainier, Washington, USA", "year": "1947", "status": "incoming" },
+    { "no": 7, "case": "Shag Harbour", "place": "Nova Scotia, Canada", "year": "1967", "status": "incoming" },
+    { "no": 8, "case": "Washington D.C. flap", "place": "Washington D.C., USA", "year": "1952", "status": "incoming" },
+    { "no": 9, "case": "Socorro: Lonnie Zamora", "place": "New Mexico, USA", "year": "1964", "status": "incoming" },
+    { "no": 10, "case": "Tehran F-4 Phantom", "place": "Tehran, Iran", "year": "1976", "status": "incoming" },
+    { "no": 11, "case": "Japan Air Lines 1628", "place": "Alaska, USA", "year": "1986", "status": "incoming" },
+    { "no": 12, "case": "USS Nimitz \"Tic Tac\"", "place": "Pacific, off California", "year": "2004", "status": "incoming" }
+  ]
+}

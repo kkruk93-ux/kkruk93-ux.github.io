@@ -1,0 +1,38 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.rovihere.meadowpile",
+      "sha256_cert_fingerprints": [
+        "E0:AA:91:23:31:7D:36:A8:E7:EE:75:B0:D8:AF:E7:7E:62:64:0A:E8:8B:E1:C7:B2:A1:9C:D4:1D:09:73:D6:2C"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.rovihere.nimbusyard",
+      "sha256_cert_fingerprints": [
+        "FA:03:63:93:FC:12:8D:C8:61:F3:82:B6:A4:67:8B:79:E0:59:E0:EA:92:96:5C:F6:2D:02:7A:4D:9E:10:58:16"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.rovihere.twirlwood",
+      "sha256_cert_fingerprints": [
+        "2F:57:F1:FA:2E:B9:19:A5:FB:51:74:59:C4:75:08:6C:D5:BD:61:23:FE:09:83:0B:C8:2D:24:24:84:74:A2:96"
+      ]
+    }
+  }
+]

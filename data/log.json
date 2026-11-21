@@ -1,0 +1,36 @@
+{
+  "_readme": "Captain's Log. APPEND new entries at the END of the list (later in the file = newer on the same date). The site sorts by date, newest first. Fields: date (YYYY-MM-DD, required), title (required), body (required; blank line = new paragraph), tags (optional list), link (optional {label, url}). English, Rovi's voice.",
+  "entries": [
+    {
+      "date": "2026-10-02",
+      "title": "Signal detected: Quarantine Signal",
+      "body": "A new Blue Mold transmission is in production. Melodic metalcore, sci-fi horror, a distress beacon nobody should answer. Do not answer.",
+      "tags": [
+        "blue-mold",
+        "music"
+      ]
+    },
+    {
+      "date": "2026-10-03",
+      "title": "Earth Files #006 queued: Mount Rainier, 1947",
+      "body": "June 1947. A private pilot reports nine bright objects skipping across the sky near Mount Rainier, Washington. The bipeds named it the start of the flying saucer era. I named it a navigation error. Not mine.",
+      "tags": [
+        "earth-files",
+        "1947"
+      ],
+      "link": {
+        "label": "Rovi on Earth Files on YouTube",
+        "url": "https://www.youtube.com/@RoviHere/shorts"
+      }
+    },
+    {
+      "date": "2026-10-03",
+      "title": "Bridge systems online",
+      "body": "Observation deck of the Blue Mold is now open to biological units with a browser. Hull at minus 142 °C. Oxygen at 20.9 %. The mold on the window frame is glowing again. I did not ask it to.\n\nPick a station. Shadow is watching you pick.",
+      "tags": [
+        "bridge",
+        "status"
+      ]
+    }
+  ]
+}

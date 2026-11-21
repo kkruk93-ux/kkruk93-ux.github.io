@@ -1,5 +1,5 @@
 /* Service worker PWA — cache powłoki. Nigdy nie cache'uje Apps Script ani URL z tokenem. */
-var CACHE = "rss-v2-3";
+var CACHE = "rss-v2-4";
 var PRECACHE = [
   "./",
   "./index.html",
@@ -10,6 +10,10 @@ var PRECACHE = [
   "./manifest.webmanifest",
   "./lib/cytoscape.min.js",
   "./lib/cytoscape.LICENSE.txt",
+  "./lib/three/three.module.min.js",
+  "./lib/three/addons/controls/OrbitControls.js",
+  "./lib/three/LICENSE.txt",
+  "./brain3d.js",
   "./data/zespol.js",
   "./data/statusy.js",
   "./data/statusy.json",

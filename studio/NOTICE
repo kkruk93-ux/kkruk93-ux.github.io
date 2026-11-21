@@ -6,6 +6,14 @@ Cytoscape.js 3.30.4
   Pliki: lib/cytoscape.min.js, lib/cytoscape.LICENSE.txt
   https://github.com/cytoscape/cytoscape.js
 
+three.js r170.0
+  Copyright © 2010-2024 three.js authors
+  License: MIT
+  Pliki: lib/three/three.module.min.js, lib/three/addons/controls/OrbitControls.js, lib/three/LICENSE.txt
+  https://github.com/mrdoob/three.js
+  Używane w Bibliotece do wizualizacji 3D mózgu (neurony, synapsy, infekcja Blue Mold).
+  Kształt mózgu jest generowany proceduralnie w brain3d.js — bez modelu z zewnątrz i bez AI.
+
 Pomysły (bez kopiowania kodu) z przeglądu publicznych repozytoriów Grok Bot
 wymienionych w poście @Bober_smart (listopad 2026), wyłącznie tam, gdzie
 licencja pozwalała na inspirację i nie kopiowaliśmy kodu z repo bez MIT/Apache/BSD:

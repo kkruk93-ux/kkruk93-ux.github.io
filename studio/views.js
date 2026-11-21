@@ -58,6 +58,22 @@
   var filt = { sprawa: true, krotki: false, long: false, tiktok: false, ksiazka: true, piosenka: true, gra: true, dzial: true, decyzja: true };
   var q = "";
   var listMode = false;
+  var biblMode = "3d";
+  try {
+    var savedMode = w.localStorage.getItem("rss-bibl-mode");
+    if (savedMode === "2d" || savedMode === "3d" || savedMode === "list") biblMode = savedMode;
+  } catch (e) {}
+  listMode = biblMode === "list";
+
+  function canBrain() {
+    return !!(w.RSS && w.RSS.brain3d && w.RSS.brain3d.canWebGL && w.RSS.brain3d.canWebGL());
+  }
+  function setBiblMode(m) {
+    if (m === "3d" && !canBrain()) m = "2d";
+    biblMode = m;
+    listMode = m === "list";
+    try { w.localStorage.setItem("rss-bibl-mode", m); } catch (e2) {}
+  }
 
   function setLabel(tab) {
     var el = $("#viewLabel");
@@ -255,11 +271,27 @@
       return;
     }
     var nCount = (bibl.wezly || []).length, eCount = (bibl.krawedzie || []).length;
+    if (biblMode === "3d" && !canBrain() && !(w.RSS && w.RSS.brain3d)) {
+      /* module still loading — keep 3d so rss-brain-ready can mount */
+    } else if (biblMode === "3d" && !canBrain()) {
+      setBiblMode("2d");
+    }
+    var is3d = biblMode === "3d";
+    var isList = biblMode === "list";
+    var is2d = biblMode === "2d";
     root.innerHTML =
       '<div class="bibl-bar">' +
         '<div class="row"><input id="biblQ" type="search" placeholder="Szukaj sprawy, książki, piosenki…" value="' + esc(q) + '">' +
-        '<button type="button" class="chip" id="biblFit">Dopasuj</button>' +
-        '<button type="button" class="chip' + (listMode ? " on" : "") + '" id="biblList">Lista</button></div>' +
+        '<button type="button" class="chip' + (is3d ? " on" : "") + '" id="bibl3d" ' + (canBrain() || is3d ? "" : "disabled title=\"WebGL niedostępny — mapa 2D\"") + '>3D mózg</button>' +
+        '<button type="button" class="chip' + (is2d ? " on" : "") + '" id="bibl2d">Mapa 2D</button>' +
+        '<button type="button" class="chip' + (isList ? " on" : "") + '" id="biblList">Lista</button>' +
+        '<button type="button" class="chip" id="biblFit">Dopasuj</button></div>' +
+        '<div class="infect-bar" id="infectBar"' + (is3d ? "" : " hidden") + '>' +
+          '<button type="button" class="chip infect" id="biblInfect">Infekcja</button>' +
+          '<label class="infect-loop"><input type="checkbox" id="biblInfectLoop"> Pętla</label>' +
+          '<input type="range" id="biblInfectSlider" min="0" max="100" value="0" aria-label="Postęp infekcji Blue Mold">' +
+          '<span id="biblInfectPct">0%</span>' +
+        '</div>' +
         '<div class="filters" id="biblFilt">' +
           [["sprawa","Sprawy"],["krotki","Shorty"],["long","Longi"],["tiktok","TikTok"],["ksiazka","Książki"],["piosenka","Piosenki"],["gra","Gry"],["dzial","Działy"],["decyzja","Decyzje"]].map(function (p) {
             return '<button type="button" data-f="' + p[0] + '" class="' + (filt[p[0]] ? "on" : "") + '">' + p[1] + "</button>";
@@ -271,12 +303,12 @@
           '<span><i style="color:#E0A24A;background:#E0A24A"></i>TEORIA</span>' +
           '<span><i style="color:#FF5A8A;background:#FF5A8A"></i>TEORIA SPISKOWA</span>' +
           '<span><i style="color:#5B6B7A;background:transparent;border:1px dashed #5B6B7A;box-shadow:none;border-radius:50%"></i>brak źródła</span>' +
-          
         "</div>" +
         '<details class="bibl-info"><summary>Skąd dane · ' + nCount + " węzłów · " + eCount + " krawędzi" + (bibl.wygenerowano ? " · " + bibl.wygenerowano + " (Europe/Berlin)" : "") + "</summary><p>" + esc(bibl.uwaga || "") + "</p></details>" +
       "</div>" +
-      '<div id="cy" role="img" aria-label="Graf wiedzy firmy" ' + (listMode ? "hidden" : "") + "></div>" +
-      '<div class="bibl-list" id="biblItems"' + (listMode ? "" : " hidden") + "></div>";
+      '<div id="brain3d" role="img" aria-label="Trójwymiarowa pamięć firmy w kształcie mózgu"' + (is3d && !isList ? "" : " hidden") + "></div>" +
+      '<div id="cy" role="img" aria-label="Graf wiedzy firmy"' + (is2d ? "" : " hidden") + "></div>" +
+      '<div class="bibl-list" id="biblItems"' + (isList ? "" : " hidden") + "></div>";
 
     function refreshList() {
       var box = $("#biblItems");
@@ -297,6 +329,57 @@
       });
     }
 
+    function mountBrain() {
+      var el = $("#brain3d");
+      var api = w.RSS && w.RSS.brain3d;
+      if (!el || !api) return;
+      var vis = visibleIds();
+      var sl = $("#biblInfectSlider");
+      var ok = api.mount(el, {
+        nodes: bibl.wezly || [],
+        edges: bibl.krawedzie || [],
+        visible: vis,
+        onOpen: openNode,
+        progress: sl ? (parseFloat(sl.value) || 0) / 100 : 0,
+        loop: !!("#biblInfectLoop" && $("#biblInfectLoop") && $("#biblInfectLoop").checked)
+      });
+      if (!ok) {
+        setBiblMode("2d");
+        painted.bibl = false;
+        renderBibl();
+      }
+    }
+
+    function applyBiblView() {
+      var b3 = $("#brain3d"), cyEl = $("#cy"), list = $("#biblItems"), inf = $("#infectBar");
+      $$("#bibl3d, #bibl2d, #biblList").forEach(function (b) {
+        if (!b) return;
+        var id = b.id;
+        b.classList.toggle("on", (id === "bibl3d" && biblMode === "3d") || (id === "bibl2d" && biblMode === "2d") || (id === "biblList" && biblMode === "list"));
+      });
+      if (biblMode === "list") {
+        if (w.RSS.brain3d && w.RSS.brain3d.isMounted && w.RSS.brain3d.isMounted()) w.RSS.brain3d.unmount();
+        if (b3) b3.hidden = true;
+        if (cyEl) cyEl.hidden = true;
+        if (list) list.hidden = false;
+        if (inf) inf.hidden = true;
+        refreshList();
+      } else if (biblMode === "2d") {
+        if (w.RSS.brain3d && w.RSS.brain3d.isMounted && w.RSS.brain3d.isMounted()) w.RSS.brain3d.unmount();
+        if (b3) b3.hidden = true;
+        if (cyEl) cyEl.hidden = false;
+        if (list) list.hidden = true;
+        if (inf) inf.hidden = true;
+        mountCy();
+      } else {
+        if (cyEl) cyEl.hidden = true;
+        if (list) list.hidden = true;
+        if (b3) b3.hidden = false;
+        if (inf) inf.hidden = false;
+        mountBrain();
+      }
+    }
+
     $$("#biblFilt [data-f]").forEach(function (b) {
       b.onclick = function () {
         var f = b.getAttribute("data-f");
@@ -309,18 +392,46 @@
     if (inp) {
       inp.addEventListener("input", function () {
         q = (inp.value || "").trim().toLowerCase();
-        if (listMode) refreshList();
-        else mountCy();
+        if (biblMode === "list") refreshList();
+        else if (biblMode === "2d") mountCy();
+        else mountBrain();
       });
     }
-    $("#biblFit") && ($("#biblFit").onclick = function () { if (cy) cy.fit(undefined, 24); });
+    $("#biblFit") && ($("#biblFit").onclick = function () {
+      if (biblMode === "3d" && w.RSS.brain3d && w.RSS.brain3d.fit) w.RSS.brain3d.fit();
+      else if (cy) cy.fit(undefined, 24);
+    });
+    $("#bibl3d") && ($("#bibl3d").onclick = function () {
+      setBiblMode("3d");
+      applyBiblView();
+    });
+    $("#bibl2d") && ($("#bibl2d").onclick = function () {
+      setBiblMode("2d");
+      applyBiblView();
+    });
     $("#biblList") && ($("#biblList").onclick = function () {
-      listMode = !listMode;
-      painted.bibl = false;
-      renderBibl();
+      setBiblMode("list");
+      applyBiblView();
+    });
+    var sl = $("#biblInfectSlider"), pct = $("#biblInfectPct");
+    if (sl) {
+      sl.addEventListener("input", function () {
+        var v = (parseFloat(sl.value) || 0) / 100;
+        if (pct) pct.textContent = Math.round(v * 100) + "%";
+        if (w.RSS.brain3d && w.RSS.brain3d.setInfection) w.RSS.brain3d.setInfection(v);
+      });
+    }
+    $("#biblInfect") && ($("#biblInfect").onclick = function () {
+      var api = w.RSS && w.RSS.brain3d;
+      if (!api) return;
+      var start = api.getProgress && api.getProgress() >= 0.98 ? 0 : (api.getProgress ? api.getProgress() : 0);
+      api.play({ duration: 12000, from: start, loop: !!("#biblInfectLoop" && $("#biblInfectLoop") && $("#biblInfectLoop").checked) });
+    });
+    $("#biblInfectLoop") && ($("#biblInfectLoop").onchange = function () {
+      if (w.RSS.brain3d && w.RSS.brain3d.setLoop) w.RSS.brain3d.setLoop(this.checked);
     });
     refreshList();
-    if (!listMode) mountCy();
+    applyBiblView();
   }
 
   function stOf(id) {
@@ -612,6 +723,9 @@
 
   function render(tab) {
     setLabel(tab);
+    if (tab !== "bibl" && w.RSS && w.RSS.brain3d && w.RSS.brain3d.isMounted && w.RSS.brain3d.isMounted()) {
+      w.RSS.brain3d.unmount();
+    }
     if (tab === "bibl") { renderBibl(); return; }
     if (tab === "art") { renderArt(); return; }
     if (tab === "vid") { renderVid(); return; }
@@ -648,7 +762,21 @@
   }
 
   w.RSS = w.RSS || {};
-  w.RSS.views = { render: render, setLabel: setLabel, labels: LABELS, openNode: openNode };
+  w.RSS.views = { render: render, setLabel: setLabel, labels: LABELS, openNode: openNode, getCy: function () { return cy; } };
+  w.addEventListener("rss-brain-progress", function (ev) {
+    var v = ev.detail && ev.detail.progress;
+    if (v == null) return;
+    var sl = $("#biblInfectSlider"), pct = $("#biblInfectPct");
+    if (sl && document.activeElement !== sl) sl.value = String(Math.round(v * 100));
+    if (pct) pct.textContent = Math.round(v * 100) + "%";
+  });
+  w.addEventListener("rss-brain-ready", function () {
+    if ((document.body.getAttribute("data-view") || "") === "bibl" && biblMode === "3d") {
+      painted.bibl = false;
+      renderBibl();
+    }
+  });
+
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bindInstall);
   else bindInstall();
 })(window);

@@ -566,3 +566,46 @@ body:not(.szef) .szef-banner { display: block; }
 }
 .support-line a { color: var(--glow); }
 .note-arch { margin: 0 0 16px; font-size: 13px; color: var(--mute); }
+
+/* 3D brain (Biblioteka) */
+#brain3d {
+  flex: 1; min-height: 280px; width: 100%; position: relative;
+  background: radial-gradient(ellipse at 50% 45%, #0b2230 0%, #05080F 70%);
+}
+#brain3d[hidden], #cy[hidden] { display: none !important; }
+#brain3d canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.brain-hint {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  max-width: min(90%, 420px);
+  padding: 6px 12px; border-radius: 999px;
+  background: rgba(5,8,15,.82); border: 1px solid rgba(92,230,242,.28);
+  color: var(--ice); font-size: 12px; letter-spacing: .3px;
+  pointer-events: none; z-index: 4; text-align: center;
+  box-shadow: 0 0 18px rgba(92,230,242,.18);
+}
+.infect-bar {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap;
+}
+.infect-bar[hidden] { display: none !important; }
+.chip.infect {
+  border-color: var(--glow); background: rgba(92,230,242,.16); color: var(--ice);
+  letter-spacing: 1px; text-transform: uppercase;
+}
+.infect-loop {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--mute); letter-spacing: .4px;
+}
+.infect-loop input { accent-color: var(--mold2); }
+#biblInfectSlider {
+  flex: 1; min-width: 120px; height: 4px; cursor: pointer;
+  accent-color: var(--glow);
+}
+#biblInfectPct {
+  font-size: 11px; color: var(--glow); min-width: 32px; letter-spacing: .6px;
+}
+@media (min-width: 900px) {
+  body.panel-open[data-view="bibl"] #view-bibl { right: min(420px, 40vw); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #brain3d canvas { /* rotation is disabled in JS */ }
+}

@@ -252,7 +252,7 @@ ul.cc-cmds .f { display: flex; justify-content: space-between; gap: 8px; margin-
 .bob { animation: bob 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 
 /* ===== v2 shell: sidebar (laptop) + bottom nav (telefon) ===== */
-:root { --sidebar-w: 228px; }
+:root { --sidebar-w: 228px; --hud-w: 360px; }
 #sidenav {
   display: none;
   position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidebar-w);
@@ -725,18 +725,29 @@ body.brain-shell #stage .view.view-graph {
 }
 
 @media (min-width: 900px) {
-  body.brain-shell #brain-world { left: var(--sidebar-w); right: 0; bottom: 0; }
+  body.brain-shell #brain-world {
+    left: var(--sidebar-w);
+    right: calc(min(var(--hud-w), 34vw) + 32px);
+    bottom: 0;
+  }
+  body.brain-shell.hud-collapsed #brain-world,
+  body.brain-shell.brain-hidden #brain-world { right: 0; }
   body.brain-shell #stage .view, body.brain-shell .view {
     left: auto; right: 16px;
     top: calc(var(--header-h) + 12px); bottom: 16px;
-    width: min(480px, 40vw);
+    width: min(var(--hud-w), 34vw);
     border-radius: 16px;
     padding: 16px 16px 20px;
   }
-  body.brain-shell[data-view="biuro"] #stage .view,
-  body.brain-shell[data-view="bibl"] #stage .view,
-  body.brain-shell[data-view="org"] #stage .view {
-    width: min(520px, 44vw);
+  body.brain-shell.hud-collapsed:not(.brain-hidden) #stage .view,
+  body.brain-shell.hud-collapsed:not(.brain-hidden) .view {
+    width: 0 !important;
+    min-width: 0;
+    padding: 0 !important;
+    border: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
   }
   body.brain-shell.brain-hidden #stage .view, body.brain-shell.brain-hidden .view {
     left: var(--sidebar-w); right: 0; top: var(--header-h); bottom: 0;
@@ -761,13 +772,28 @@ body.brain-shell #stage .view.view-graph {
 @media (max-width: 899px) {
   body.brain-shell #brain-world {
     top: var(--header-h); left: 0; right: 0; bottom: auto;
-    height: 36vh; min-height: 180px;
+    height: 38vh; min-height: 180px;
   }
   body.brain-shell #stage .view, body.brain-shell .view {
-    top: calc(var(--header-h) + 36vh);
+    top: calc(var(--header-h) + 38vh);
     left: 0; right: 0; bottom: var(--dock-h);
     border-radius: 18px 18px 0 0; border-bottom: 0;
     padding: 12px 12px 18px;
+  }
+  body.brain-shell.hud-collapsed:not(.brain-hidden) #brain-world {
+    height: auto;
+    bottom: var(--dock-h);
+    min-height: 0;
+  }
+  body.brain-shell.hud-collapsed:not(.brain-hidden) #stage .view,
+  body.brain-shell.hud-collapsed:not(.brain-hidden) .view {
+    top: auto;
+    height: 0;
+    padding: 0 !important;
+    border: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
   }
   body.brain-shell.brain-hidden #brain-world { height: 0; min-height: 0; }
   body.brain-shell.brain-hidden #stage .view, body.brain-shell.brain-hidden .view {
@@ -805,3 +831,51 @@ body.brain-shell .bibl-bar {
 }
 body:not(.brain-shell) #view-biuro { display: none !important; }
 body:not(.brain-shell) #brain-world { display: none !important; }
+
+.hud-toggle {
+  display: none;
+  font: inherit;
+  cursor: pointer;
+  color: var(--ice, #BFF6FA);
+  background: rgba(8, 16, 28, .78);
+  border: 1px solid rgba(92,230,242,.35);
+  box-shadow: 0 8px 24px rgba(0,0,0,.4), inset 0 1px 0 rgba(191,246,250,.1);
+  backdrop-filter: blur(12px);
+  letter-spacing: 0.04em;
+}
+@media (min-width: 900px) {
+  body.brain-shell:not(.brain-hidden) .hud-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    position: fixed;
+    z-index: 6;
+    right: calc(min(var(--hud-w), 34vw) + 24px);
+    top: calc(var(--header-h) + 14px);
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 12px;
+  }
+  body.brain-shell.hud-collapsed:not(.brain-hidden) .hud-toggle {
+    right: 16px;
+  }
+}
+@media (max-width: 899px) {
+  body.brain-shell:not(.brain-hidden) .hud-toggle {
+    display: inline-flex;
+    align-items: center;
+    position: fixed;
+    z-index: 6;
+    right: 10px;
+    top: calc(var(--header-h) + 38vh - 16px);
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 12px;
+  }
+  body.brain-shell.hud-collapsed:not(.brain-hidden) .hud-toggle {
+    top: auto;
+    bottom: calc(var(--dock-h) + 10px);
+  }
+}

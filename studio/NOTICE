@@ -17,8 +17,8 @@ three.js r170.0
          importowanego przez GLTFLoader; oryginalny plik three.js też jest MIT),
          lib/three/LICENSE.txt
   https://github.com/mrdoob/three.js
-  Używane w Bibliotece do wizualizacji 3D mózgu (tkanka, szlaki DTI, impulsy,
-  infekcja Blue Mold, tryb badania).
+  Używane w Bibliotece do wizualizacji 3D mózgu (sieć neuronów i synaps,
+  szlaki DTI, impulsy, infekcja Blue Mold, tryb badania).
 
 3D Reference Organ for Brain, Male, v1.3
   Autorzy: Kristen Browne; Heidi Schlehlein (2023)
@@ -31,7 +31,9 @@ three.js r170.0
   Pliki: assets/brain/brain-cortex.glb (kora, móżdżek, pień — scalone i
          zredukowane na potrzeby telefonu), assets/brain/ATTRIBUTION.txt
   Adaptacja: wybór siatek zewnętrznych, scalenie według płatów, redukcja
-  wielokątów. Brak poparcia (endorsement) ze strony autorów, HRA, Allen
+  wielokątów. Geometria modelu służy wyłącznie jako chmura punktów / źródło
+  próbkowania — aplikacja nie renderuje powierzchni tkanki ani tekstur
+  biologicznych. Brak poparcia (endorsement) ze strony autorów, HRA, Allen
   Institute lub NIH.
   Szlaki istoty białej (assets/brain/tracts.bin) są stylizowanymi, wygenerowanymi
   włóknami w konwencji traktografii DTI — służą wizualizacji, nie są pomiarem

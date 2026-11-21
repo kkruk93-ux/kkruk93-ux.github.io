@@ -1,15 +1,15 @@
 /* Rovi & Shadow Studio — 3D Biblioteka (mózg).
    three.js r170 MIT.
-   Mesh: 3D Reference Organ for Brain, Male v1.3 — Kristen Browne &
-   Heidi Schlehlein (2023), Human Reference Atlas / HuBMAP, CC BY 4.0
-   (https://doi.org/10.48539/HBM929.XKCL.339), derived from the
+   Geometry sampled from: 3D Reference Organ for Brain, Male v1.3 —
+   Kristen Browne & Heidi Schlehlein (2023), Human Reference Atlas / HuBMAP,
+   CC BY 4.0 (https://doi.org/10.48539/HBM929.XKCL.339), derived from the
    Allen Human Reference Atlas – 3D, 2020 (Ding et al., 2016).
-   Adapted (lobe merge, decimation) for this app; no endorsement by the
+   The mesh is used only as a point-cloud / sampling guide — no tissue
+   surface or biological textures are rendered. No endorsement by the
    authors, HRA, Allen Institute or NIH. See assets/brain/ATTRIBUTION.txt.
-   White-matter fibers are stylized DTI-like streamlines generated for
-   visualization, not a measured tractography atlas.
+   White-matter fibers are stylized DTI-like streamlines (visualization only).
    Examination figures are original procedural geometry (no AI, no third-party mesh).
-   Fallback: procedural hull if the GLB cannot be loaded.
+   Fallback: procedural point cloud if the GLB cannot be loaded.
 */
 import * as THREE from "three";
 import { OrbitControls } from "./lib/three/addons/controls/OrbitControls.js";
@@ -30,7 +30,10 @@ var COLOR = {
   dok: 0xF5E6A3,
   teoria: 0xE0A24A,
   spisek: 0xFF5A8A,
-  brak: 0x5B6B7A
+  brak: 0x5B6B7A,
+  violet: 0x8B6CFF,
+  gold: 0xE8C36A,
+  electric: 0x4CC9FF
 };
 
 var ASSET = {
@@ -91,6 +94,20 @@ var LOBE_BUNDLES = {
   brainstem: ["cst_L", "cst_R", "cbp"],
   cc: ["cc"]
 };
+
+var LOBE_IDS = {
+  frontal_L: 1, frontal_R: 2,
+  parietal_L: 3, parietal_R: 4,
+  temporal_L: 5, temporal_R: 6,
+  occipital_L: 7, occipital_R: 8,
+  cerebellum_L: 9, cerebellum_R: 10,
+  brainstem: 11
+};
+
+var netUniforms = null;
+var netAtoms, netDust, netSynapses, netRings, netElectrons, netLinks;
+var netSamples = [];
+var electronData = [];
 
 var state = {
   mounted: false,
@@ -200,108 +217,6 @@ function deformBrain(x, y, z) {
   return new THREE.Vector3(px * rad, py * rad, pz * rad);
 }
 
-function makeTissueMaterial(kind, uniforms) {
-  var tissue = kind === "cerebellum"
-    ? new THREE.Color(0x3A2228)
-    : kind === "brainstem"
-      ? new THREE.Color(0x2E1E20)
-      : new THREE.Color(0x3E262C);
-  var tissue2 = kind === "cerebellum"
-    ? new THREE.Color(0x6A4448)
-    : new THREE.Color(0x7A585C);
-  var mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    side: THREE.FrontSide,
-    uniforms: Object.assign({
-      uT: { value: 0 },
-      uTime: { value: 0 },
-      uHolo: { value: 0 },
-      uNSeeds: { value: 0 },
-      uSeed: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
-      uStart: { value: [0, 0, 0, 0, 0, 0, 0, 0] },
-      uTissue: { value: tissue },
-      uTissue2: { value: tissue2 },
-      uMold: { value: new THREE.Color(COLOR.mold) },
-      uMold2: { value: new THREE.Color(COLOR.glow) },
-      uFresnel: { value: kind === "brainstem" ? 0.55 : 0.85 },
-      uActive: { value: 0 },
-      uDim: { value: 0 }
-    }, uniforms || {}),
-    vertexShader: [
-      "varying vec3 vN;",
-      "varying vec3 vW;",
-      "varying vec3 vV;",
-      "void main(){",
-      "  vec4 w = modelMatrix * vec4(position,1.0);",
-      "  vW = w.xyz;",
-      "  vN = normalize(mat3(modelMatrix) * normal);",
-      "  vV = cameraPosition - vW;",
-      "  gl_Position = projectionMatrix * viewMatrix * w;",
-      "}"
-    ].join("\n"),
-    fragmentShader: [
-      "precision highp float;",
-      "varying vec3 vN; varying vec3 vW; varying vec3 vV;",
-      "uniform float uT, uTime, uHolo, uFresnel, uActive, uDim;",
-      "uniform int uNSeeds;",
-      "uniform vec3 uSeed[8];",
-      "uniform float uStart[8];",
-      "uniform vec3 uTissue, uTissue2, uMold, uMold2;",
-      "float infection(vec3 p){",
-      "  float m=0.0;",
-      "  for(int i=0;i<8;i++){",
-      "    if(i>=uNSeeds) break;",
-      "    float d=length(p-uSeed[i]);",
-      "    float R=max(0.0, uT-uStart[i])*2.05;",
-      "    float f=1.0-smoothstep(R*0.40, R+0.06, d);",
-      "    m=max(m,f);",
-      "  }",
-      "  return clamp(m,0.0,1.0);",
-      "}",
-      "void main(){",
-      "  vec3 n=normalize(vN);",
-      "  vec3 v=normalize(vV);",
-      "  float ndv=max(0.0, dot(n,v));",
-      "  float fres=pow(1.0-ndv, 2.35)*uFresnel;",
-      "  float wrap=clamp(dot(n, normalize(vec3(-0.35,0.85,0.45)))*0.55+0.45, 0.0, 1.0);",
-      "  float inf=infection(vW);",
-      "  vec3 tissue=mix(uTissue, uTissue2, wrap);",
-      "  tissue += vec3(0.28,0.08,0.12)*pow(wrap,2.0)*0.22;",
-      "  vec3 col=mix(tissue, mix(uMold, uMold2, wrap), smoothstep(0.0,1.0,inf));",
-      "  col += fres * mix(vec3(0.30,0.62,0.80), uMold2, inf) * 0.65;",
-      "  col += inf * uMold2 * 0.28;",
-      "  float act=uActive*(0.45+0.35*sin(uTime*3.4));",
-      "  col += vec3(0.25,0.85,1.0)*act*0.55;",
-      "  float alpha=mix(0.15, 0.52, inf) + fres*0.16;",
-      "  alpha=mix(alpha, max(alpha,0.48), act*0.6);",
-      "  alpha*=mix(1.0, 0.72, uDim*(1.0-uActive));",
-      "  if(uHolo>0.01){",
-      "    float scan=0.5+0.5*sin(vW.y*32.0 + uTime*4.5);",
-      "    col=mix(col, vec3(0.35,0.95,1.0), uHolo*(0.22+0.40*scan));",
-      "    alpha=mix(alpha, 0.50+0.28*scan, uHolo*0.75);",
-      "  }",
-      "  gl_FragColor=vec4(col, clamp(alpha,0.14,0.92));",
-      "}"
-    ].join("\n")
-  });
-  infectUniforms.push(mat.uniforms);
-  return mat;
-}
-
-function cloneBackMaterial(front) {
-  var mat = front.clone();
-  mat.side = THREE.BackSide;
-  mat.uniforms = front.uniforms; /* share infection / holo */
-  mat.transparent = true;
-  mat.depthWrite = true;
-  mat.depthTest = true;
-  /* slightly darker via existing wrap; alpha is in shader */
-  infectUniforms.push(mat.uniforms);
-  return mat;
-}
-
 function parseTracts(buf) {
   var u8 = new Uint8Array(buf);
   var dv = new DataView(buf);
@@ -377,9 +292,9 @@ function buildTractLines(list, low) {
   geo.setColors(col);
   tractMat = new LineMaterial({
     vertexColors: true,
-    linewidth: low ? 1.8 : 2.4,
+    linewidth: low ? 1.05 : 1.2,
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.20,
     dashed: false,
     worldUnits: false,
     depthTest: true,
@@ -423,7 +338,7 @@ function buildPulses(used) {
     blending: THREE.AdditiveBlending,
     uniforms: { uSize: { value: state.low ? 10.0 : 13.0 } },
     vertexShader: "attribute vec3 color; varying vec3 vC; uniform float uSize; void main(){ vC=color; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=uSize*clamp(1.6/-mv.z, 0.7, 3.2); gl_Position=projectionMatrix*mv; }",
-    fragmentShader: "varying vec3 vC; void main(){ vec2 p=gl_PointCoord*2.0-1.0; float d=dot(p,p); if(d>1.0) discard; float a=exp(-d*3.2); gl_FragColor=vec4(vC*1.35, a); }"
+    fragmentShader: "varying vec3 vC; void main(){ vec2 p=gl_PointCoord*2.0-1.0; float d=dot(p,p); if(d>1.0) discard; float a=exp(-d*3.2)*0.7; vec3 col=vC*0.85; float lum=max(col.r,max(col.g,col.b)); col*=0.7/max(0.7,lum); gl_FragColor=vec4(col, a); }"
   });
   var pts = new THREE.Points(geo, mat);
   pts.renderOrder = 3;
@@ -437,7 +352,7 @@ function buildPulses(used) {
 
 function buildTractTubes(list, low) {
   var sides = low ? 5 : 6;
-  var radius = low ? 0.018 : 0.016;
+  var radius = low ? 0.009 : 0.0075;
   var step = low ? 2 : 1;
   var positions = [];
   var colors = [];
@@ -474,9 +389,9 @@ function buildTractTubes(list, low) {
       N.normalize();
       B.crossVectors(T, N).normalize();
       dtiColor(px[j3] - px[i3], px[j3 + 1] - px[i3 + 1], px[j3 + 2] - px[i3 + 2], c);
-      var cr = Math.min(1, c.r * 1.5 + 0.08);
-      var cg = Math.min(1, c.g * 1.5 + 0.08);
-      var cb = Math.min(1, c.b * 1.5 + 0.1);
+      var cr = Math.min(1, c.r * 1.15 + 0.05);
+      var cg = Math.min(1, c.g * 1.15 + 0.05);
+      var cb = Math.min(1, c.b * 1.15 + 0.08);
       var u = i / (n - 1);
       for (var s = 0; s < sides; s++) {
         var ang = (s / sides) * Math.PI * 2;
@@ -532,9 +447,11 @@ function buildTractTubes(list, low) {
       "void main(){",
       "  float fres=pow(1.0-abs(dot(normalize(vN), normalize(vV))), 1.6);",
       "  float pulse=exp(-40.0*abs(fract(vT - uTime*0.28)-0.02));",
-      "  vec3 col=vC*(0.55+0.55*fres) + vec3(0.85,0.95,1.0)*pulse;",
-      "  float a=0.58 + 0.42*pulse + 0.2*fres;",
-      "  gl_FragColor=vec4(col, clamp(a,0.28,1.0));",
+      "  vec3 col=vC*(0.24+0.28*fres) + vec3(0.55,0.85,1.0)*pulse*0.55;",
+      "  float lum=max(col.r, max(col.g, col.b));",
+      "  col*=0.58/max(0.58, lum);",
+      "  float a=0.09 + 0.32*pulse + 0.08*fres;",
+      "  gl_FragColor=vec4(col, clamp(a,0.05,0.40));",
       "}"
     ].join("\n")
   });
@@ -708,10 +625,17 @@ function buildHyphae(seeds) {
   var rng = mulberry32(0xB10E01D);
   var paths = [];
   var surface = [];
-  if (brainPivot) {
+  if (netSamples && netSamples.length) {
+    var step = state.low ? 3 : 2;
+    for (var i = 0; i < netSamples.length; i += step) {
+      var s = netSamples[i];
+      surface.push(new THREE.Vector3(s.x, s.y, s.z));
+    }
+  } else if (brainPivot) {
     brainPivot.traverse(function (o) {
       if (!o.isMesh || !o.geometry || !o.geometry.getAttribute) return;
       if (o.name && /back/i.test(o.name)) return;
+      if (!o.name || !lobeMeshes[o.name]) return;
       var pos = o.geometry.getAttribute("position");
       if (!pos) return;
       var step = state.low ? 9 : 5;
@@ -1075,7 +999,7 @@ function setSceneMode(mode) {
   }
   if (hud) {
     var tag = hud.querySelector(".hud-mode");
-    if (tag) tag.textContent = exam ? "TRYB // BADANIE KOSMITÓW" : "TRYB // PLEŚŃ · DTI";
+    if (tag) tag.textContent = exam ? "TRYB // BADANIE KOSMITÓW" : "TRYB // PLEŚŃ · SIEĆ";
   }
 }
 
@@ -1099,7 +1023,7 @@ function buildHud(el) {
     '<div class="hud-scan"></div>' +
     '<div class="hud-col hud-left">' +
       '<div class="hud-brand">RSS // NEURO-SCAN</div>' +
-      '<div class="hud-mode">TRYB // PLEŚŃ · DTI</div>' +
+      '<div class="hud-mode">TRYB // PLEŚŃ · SIEĆ</div>' +
       '<canvas class="hud-eeg" width="280" height="64" aria-hidden="true"></canvas>' +
       '<div class="hud-counts" id="brainCounts"></div>' +
       '<div class="hud-infect">INFEKCJA <b id="brainInfectHud">0%</b></div>' +
@@ -1240,9 +1164,20 @@ function projectLabels() {
 }
 
 
+function frameView(pos, target) {
+  target = target || new THREE.Vector3();
+  var aspect = (camera && camera.aspect) ? camera.aspect : 1.2;
+  if (aspect < 1.3) {
+    var d = pos.clone().sub(target);
+    var k = 1.3 / Math.max(0.72, aspect);
+    pos = target.clone().add(d.multiplyScalar(Math.min(k, 1.6)));
+  }
+  return { pos: pos, target: target };
+}
+
 function viewpointFor(key) {
   if (!key || key === "overview") {
-    return { pos: new THREE.Vector3(1.85, 1.15, 2.15), target: new THREE.Vector3(0, 0.02, 0) };
+    return frameView(new THREE.Vector3(2.15, 1.28, 2.55), new THREE.Vector3(0, 0.02, 0));
   }
   var info = meta && meta.lobes && meta.lobes[key];
   var c = info && info.center
@@ -1265,7 +1200,7 @@ function viewpointFor(key) {
     pos.set(1.7, 0.35, 2.0);
     target.set(0, -0.35, 0.04);
   }
-  return { pos: pos, target: target };
+  return frameView(pos, target);
 }
 
 function setHighlight(key) {
@@ -1277,16 +1212,12 @@ function setHighlight(key) {
     for (var i = 0; i < names.length; i++) activeBundles[names[i]] = 1;
   }
   var overview = !key || key === "overview";
-  Object.keys(lobeMeshes).forEach(function (name) {
-    var mesh = lobeMeshes[name];
-    var u = mesh && mesh.material && mesh.material.uniforms;
-    if (!u || u.uActive == null) return;
-    var on = !overview && (name === key || (key === "cc" && name.indexOf("frontal") >= 0));
-    /* cc is a virtual target — glow both medial fronts slightly, or nothing specific */
-    if (key === "cc") on = (name.indexOf("frontal") >= 0);
-    u.uActive.value = on ? 1 : 0;
-    u.uDim.value = overview ? 0 : (on ? 0 : 0.32);
-  });
+  if (netUniforms) {
+    netUniforms.uOverview.value = overview ? 1 : 0;
+    if (overview) netUniforms.uFocusId.value = 0;
+    else if (key === "cc") netUniforms.uFocusId.value = 100;
+    else netUniforms.uFocusId.value = LOBE_IDS[key] || 0;
+  }
 }
 
 function focusLobe(key, opts) {
@@ -1418,8 +1349,9 @@ function fit() {
     controls.minDistance = 1.5;
     controls.maxDistance = 8.5;
   } else {
-    camera.position.set(1.85, 1.15, 2.15);
-    controls.target.set(0, 0.02, 0);
+    var vp = frameView(new THREE.Vector3(2.15, 1.28, 2.55), new THREE.Vector3(0, 0.02, 0));
+    camera.position.copy(vp.pos);
+    controls.target.copy(vp.target);
     controls.minDistance = 1.2;
     controls.maxDistance = 6.5;
   }
@@ -1438,6 +1370,7 @@ function resize() {
     renderer.getDrawingBufferSize(s);
     tractMat.resolution.set(s.x, s.y);
   }
+  syncNetRes();
 }
 
 function pickNode(ev) {
@@ -1561,6 +1494,10 @@ function unmount() {
   if (labelLayer && labelLayer.parentNode) labelLayer.parentNode.removeChild(labelLayer);
   renderer = scene = camera = controls = container = group = examGroup = brainPivot = null;
   tractLines = tractMat = tractTubes = pulsePts = nodePts = hyphaLines = sporePts = null;
+  netAtoms = netDust = netSynapses = netRings = netElectrons = netLinks = null;
+  netUniforms = null;
+  netSamples = [];
+  electronData = [];
   calipers = scanRing = hud = eegCanvas = eegCtx = labelLayer = null;
   labelEls = [];
   nodeIndex = [];
@@ -1574,31 +1511,729 @@ function unmount() {
   state.hint = null;
 }
 
-function addTissueMesh(mesh, kind) {
-  var frontMat = makeTissueMaterial(kind);
-  var backMat = frontMat.clone();
-  backMat.side = THREE.BackSide;
-  /* Gyri are closed solids; writing depth on back faces hides interior WM tracts. */
-  backMat.depthWrite = false;
-  backMat.uniforms = frontMat.uniforms;
-  mesh.material = frontMat;
-  mesh.renderOrder = 5;
+
+function makeNetUniforms() {
+  if (netUniforms) return netUniforms;
+  var seeds = [];
+  for (var i = 0; i < 8; i++) seeds.push(new THREE.Vector3());
+  netUniforms = {
+    uT: { value: 0 },
+    uTime: { value: 0 },
+    uHolo: { value: 0 },
+    uNSeeds: { value: 0 },
+    uSeed: { value: seeds },
+    uStart: { value: [0, 0, 0, 0, 0, 0, 0, 0] },
+    uFocusId: { value: 0 },
+    uOverview: { value: 1 },
+    uRes: { value: new THREE.Vector2(1, 1) },
+    uMold: { value: new THREE.Color(COLOR.mold) },
+    uMold2: { value: new THREE.Color(COLOR.glow) }
+  };
+  infectUniforms.push(netUniforms);
+  return netUniforms;
+}
+
+function syncNetRes() {
+  if (!netUniforms || !netUniforms.uRes || !renderer) return;
+  renderer.getDrawingBufferSize(netUniforms.uRes.value);
+}
+
+function lobeTint(id) {
+  var c = new THREE.Color();
+  if (id === 1 || id === 2) c.set(0x4CC9FF);
+  else if (id === 3 || id === 4) c.set(0x5CE6F2);
+  else if (id === 5 || id === 6) c.set(0x8B6CFF);
+  else if (id === 7 || id === 8) c.set(0x7EE8FF);
+  else if (id === 9 || id === 10) c.set(0x6A5CFF);
+  else if (id === 11) c.set(0xE8C36A);
+  else c.set(0x4CC9FF);
+  return c;
+}
+
+function lobeIdOfName(name) {
+  var id = LOBE_IDS[name];
+  if (id) return id;
+  var n = (name || "").toLowerCase();
+  if (n.indexOf("cerebellum") >= 0) return 9;
+  if (n.indexOf("brainstem") >= 0) return 11;
+  if (n.indexOf("frontal") >= 0) return 1;
+  if (n.indexOf("parietal") >= 0) return 3;
+  if (n.indexOf("temporal") >= 0) return 5;
+  if (n.indexOf("occipital") >= 0) return 7;
+  return 1;
+}
+
+function lobeIdFromPos(x, y, z) {
+  if (y < -0.62) {
+    if (Math.abs(x) < 0.18 && z > -0.15) return 11;
+    return x < 0 ? 9 : 10;
+  }
+  if (z < -0.42) return x < 0 ? 7 : 8;
+  if (y < -0.08 && Math.abs(z) < 0.55 && Math.abs(x) > 0.25) return x < 0 ? 5 : 6;
+  if (y > 0.12 && z > 0.05) return x < 0 ? 1 : 2;
+  return x < 0 ? 3 : 4;
+}
+
+function bakeMeshWorld(mesh) {
+  mesh.updateWorldMatrix(true, false);
+  var g = mesh.geometry.clone();
+  var pos = g.getAttribute("position");
+  var v = new THREE.Vector3();
+  for (var i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeBoundingSphere();
+  mesh.geometry = g;
+  mesh.position.set(0, 0, 0);
+  mesh.rotation.set(0, 0, 0);
+  mesh.scale.set(1, 1, 1);
+  mesh.updateMatrix();
+}
+
+function makePickMesh(mesh) {
+  mesh.material = new THREE.MeshBasicMaterial({
+    colorWrite: false,
+    depthWrite: false,
+    depthTest: false,
+    side: THREE.DoubleSide
+  });
+  mesh.renderOrder = 0;
   mesh.frustumCulled = true;
   if (mesh.name) lobeMeshes[mesh.name] = mesh;
-  var back = new THREE.Mesh(mesh.geometry, backMat);
-  back.name = (mesh.name || kind) + "_back";
-  back.renderOrder = 1;
-  back.matrixAutoUpdate = false;
-  mesh.add(back);
-  back.matrix.identity();
   return mesh;
 }
 
-function kindOfName(name) {
-  var n = (name || "").toLowerCase();
-  if (n.indexOf("cerebellum") >= 0) return "cerebellum";
-  if (n.indexOf("brainstem") >= 0) return "brainstem";
-  return "cortex";
+function sampleMeshes(meshes) {
+  var total = 0;
+  meshes.forEach(function (m) {
+    var pos = m.geometry && m.geometry.getAttribute("position");
+    if (pos) total += pos.count;
+  });
+  var target = state.low ? 10000 : 28000;
+  var step = Math.max(1, Math.floor(total / Math.max(1, target)));
+  var out = [];
+  var tmp = new THREE.Vector3();
+  meshes.forEach(function (m) {
+    var pos = m.geometry && m.geometry.getAttribute("position");
+    if (!pos) return;
+    var lid = lobeIdOfName(m.name);
+    for (var i = 0; i < pos.count; i += step) {
+      tmp.fromBufferAttribute(pos, i);
+      out.push({ x: tmp.x, y: tmp.y, z: tmp.z, lobe: lid, name: m.name || "" });
+    }
+  });
+  return out;
+}
+
+var NET_GLSL_HEAD = [
+  "precision highp float;",
+  "uniform float uT, uTime, uHolo, uOverview, uFocusId;",
+  "uniform int uNSeeds;",
+  "uniform vec3 uSeed[8];",
+  "uniform float uStart[8];",
+  "uniform vec3 uMold, uMold2;",
+  "float infection(vec3 p){",
+  "  float m=0.0;",
+  "  for(int i=0;i<8;i++){",
+  "    if(i>=uNSeeds) break;",
+  "    float d=length(p-uSeed[i]);",
+  "    float R=max(0.0, uT-uStart[i])*2.05;",
+  "    float f=1.0-smoothstep(R*0.40, R+0.06, d);",
+  "    m=max(m,f);",
+  "  }",
+  "  return clamp(m,0.0,1.0);",
+  "}",
+  "float focusAmt(float lobe){",
+  "  if(uOverview>0.5) return 1.0;",
+  "  if(uFocusId>99.0) return (lobe>0.5 && lobe<2.5) ? 1.2 : 0.28;",
+  "  return (abs(lobe-uFocusId)<0.5) ? 1.22 : 0.28;",
+  "}"
+].join("\n");
+
+function atomMaterial() {
+  var u = makeNetUniforms();
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: u,
+    vertexShader: [
+      "attribute float aLobe;",
+      "attribute float aPhase;",
+      "attribute float aSize;",
+      "attribute vec3 color;",
+      "varying float vLobe;",
+      "varying float vPhase;",
+      "varying vec3 vW;",
+      "varying vec3 vCol;",
+      "uniform vec2 uRes;",
+      "void main(){",
+      "  vLobe=aLobe; vPhase=aPhase; vCol=color;",
+      "  vec4 w=modelMatrix*vec4(position,1.0);",
+      "  vW=w.xyz;",
+      "  vec4 mv=viewMatrix*w;",
+      "  gl_PointSize=aSize * uRes.y * 0.15 / max(-mv.z, 0.35);",
+      "  gl_Position=projectionMatrix*mv;",
+      "}"
+    ].join("\n"),
+    fragmentShader: NET_GLSL_HEAD + "\n" + [
+      "varying float vLobe, vPhase;",
+      "varying vec3 vW, vCol;",
+      "void main(){",
+      "  vec2 p=gl_PointCoord*2.0-1.0;",
+      "  float d=length(p);",
+      "  if(d>1.0) discard;",
+      "  float core=exp(-d*d*16.0);",
+      "  float ring=smoothstep(0.52,0.36,d)*smoothstep(0.16,0.32,d);",
+      "  float halo=exp(-d*d*6.5);",
+      "  float flicker=0.75+0.25*sin(uTime*4.8+vPhase);",
+      "  float inf=infection(vW);",
+      "  float foc=focusAmt(vLobe);",
+      "  vec3 col=mix(vCol, mix(uMold, uMold2, 0.7), inf);",
+      "  col += vec3(0.90,0.74,0.28)*core*0.35;",
+      "  col *= flicker * (0.55 + 0.45*foc);",
+      "  col += vec3(0.55,0.85,1.0)*ring*0.55*foc;",
+      "  float wave=0.5+0.5*sin(vW.y*7.2 - uTime*1.85 + vW.x*3.1);",
+      "  col += vec3(0.28,0.55,1.0)*wave*0.10*foc;",
+      "  float lum=max(col.r, max(col.g, col.b));",
+      "  col*=0.72/max(0.72, lum);",
+      "  float alpha=(core*0.70 + halo*0.10 + ring*0.20)*mix(0.45,0.80,foc);",
+      "  alpha=mix(alpha, min(0.85, alpha*1.08), inf);",
+      "  if(uHolo>0.01){",
+      "    float scan=0.5+0.5*sin(vW.y*28.0+uTime*4.5);",
+      "    col=mix(col, vec3(0.40,0.95,1.0), uHolo*(0.25+0.40*scan));",
+      "    alpha=mix(alpha, max(alpha,0.55+0.28*scan), uHolo*0.7);",
+      "  }",
+      "  gl_FragColor=vec4(col, clamp(alpha,0.0,1.0));",
+      "}"
+    ].join("\n")
+  });
+}
+
+function dustMaterial() {
+  var u = makeNetUniforms();
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: u,
+    vertexShader: [
+      "attribute float aLobe;",
+      "attribute float aPhase;",
+      "attribute float aSize;",
+      "attribute vec3 color;",
+      "varying float vLobe;",
+      "varying float vPhase;",
+      "varying vec3 vW;",
+      "varying vec3 vCol;",
+      "uniform float uTime;",
+      "uniform vec2 uRes;",
+      "void main(){",
+      "  vLobe=aLobe; vPhase=aPhase; vCol=color;",
+      "  vec3 p=position;",
+      "  p += 0.014*vec3(sin(uTime*0.7+aPhase), cos(uTime*0.9+aPhase*1.3), sin(uTime*1.1+aPhase*0.6));",
+      "  vec4 w=modelMatrix*vec4(p,1.0);",
+      "  vW=w.xyz;",
+      "  vec4 mv=viewMatrix*w;",
+      "  gl_PointSize=aSize * uRes.y * 0.11 / max(-mv.z, 0.35);",
+      "  gl_Position=projectionMatrix*mv;",
+      "}"
+    ].join("\n"),
+    fragmentShader: NET_GLSL_HEAD + "\n" + [
+      "varying float vLobe, vPhase;",
+      "varying vec3 vW, vCol;",
+      "void main(){",
+      "  vec2 p=gl_PointCoord*2.0-1.0;",
+      "  float d=length(p);",
+      "  if(d>1.0) discard;",
+      "  float g=exp(-d*d*6.0);",
+      "  float flicker=0.55+0.45*sin(uTime*6.2+vPhase*2.0);",
+      "  float inf=infection(vW);",
+      "  float foc=focusAmt(vLobe);",
+      "  vec3 col=mix(vCol, uMold2, inf*0.8);",
+      "  col *= flicker * (0.45+0.55*foc);",
+      "  float inter=0.5+0.5*sin(vW.x*9.0+vW.z*8.0 - uTime*2.2);",
+      "  col += vec3(0.6,0.45,1.0)*inter*0.25;",
+      "  float alpha=g*0.26*foc*flicker;",
+      "  if(uHolo>0.01) alpha=mix(alpha, alpha+0.2, uHolo);",
+      "  gl_FragColor=vec4(col, clamp(alpha,0.0,0.85));",
+      "}"
+    ].join("\n")
+  });
+}
+
+function lineNetMaterial() {
+  var u = makeNetUniforms();
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: u,
+    vertexShader: [
+      "attribute float aLobe;",
+      "attribute float aPhase;",
+      "attribute float aU;",
+      "attribute vec3 color;",
+      "varying float vLobe, vPhase, vU;",
+      "varying vec3 vW, vCol;",
+      "void main(){",
+      "  vLobe=aLobe; vPhase=aPhase; vU=aU; vCol=color;",
+      "  vec4 w=modelMatrix*vec4(position,1.0);",
+      "  vW=w.xyz;",
+      "  gl_Position=projectionMatrix*viewMatrix*w;",
+      "}"
+    ].join("\n"),
+    fragmentShader: NET_GLSL_HEAD + "\n" + [
+      "varying float vLobe, vPhase, vU;",
+      "varying vec3 vW, vCol;",
+      "void main(){",
+      "  float inf=infection(vW);",
+      "  float foc=focusAmt(vLobe);",
+      "  vec3 col=mix(vCol, mix(uMold, uMold2, 0.7), inf);",
+      "  float pulse=pow(max(0.0, sin(uTime*2.6 - vU*6.2832 + vPhase)), 8.0);",
+      "  col += vec3(0.75,0.95,1.0)*pulse;",
+      "  col += vec3(0.90,0.72,0.28)*pulse*0.45;",
+      "  col *= (0.45 + 0.55*foc);",
+      "  float lum=max(col.r, max(col.g, col.b));",
+      "  col*=0.62/max(0.62, lum);",
+      "  float alpha=mix(0.10, 0.32, foc) + pulse*0.22 + inf*0.12;",
+      "  if(uHolo>0.01){",
+      "    float scan=0.5+0.5*sin(vW.y*24.0+uTime*4.5);",
+      "    col=mix(col, vec3(0.45,0.95,1.0), uHolo*(0.2+0.35*scan));",
+      "    alpha=mix(alpha, alpha+0.2, uHolo*0.6);",
+      "  }",
+      "  gl_FragColor=vec4(col, clamp(alpha,0.0,1.0));",
+      "}"
+    ].join("\n")
+  });
+}
+
+function electronMaterial() {
+  var u = makeNetUniforms();
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: u,
+    vertexShader: [
+      "attribute float aSize;",
+      "attribute vec3 color;",
+      "varying vec3 vCol;",
+      "uniform vec2 uRes;",
+      "void main(){",
+      "  vCol=color;",
+      "  vec4 mv=modelViewMatrix*vec4(position,1.0);",
+      "  gl_PointSize=aSize * uRes.y * 0.18 / max(-mv.z, 0.35);",
+      "  gl_Position=projectionMatrix*mv;",
+      "}"
+    ].join("\n"),
+    fragmentShader: [
+      "precision highp float;",
+      "varying vec3 vCol;",
+      "void main(){",
+      "  vec2 p=gl_PointCoord*2.0-1.0;",
+      "  float d=length(p);",
+      "  if(d>1.0) discard;",
+      "  float g=exp(-d*d*8.0);",
+      "  gl_FragColor=vec4(vCol, g);",
+      "}"
+    ].join("\n")
+  });
+}
+
+function ringMaterial() {
+  var u = makeNetUniforms();
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: u,
+    vertexShader: [
+      "attribute float aLobe;",
+      "attribute float aPhase;",
+      "varying float vLobe;",
+      "varying vec3 vW;",
+      "void main(){",
+      "  vLobe=aLobe;",
+      "  vec4 w=modelMatrix*vec4(position,1.0);",
+      "  vW=w.xyz;",
+      "  gl_Position=projectionMatrix*viewMatrix*w;",
+      "}"
+    ].join("\n"),
+    fragmentShader: NET_GLSL_HEAD + "\n" + [
+      "varying float vLobe;",
+      "varying vec3 vW;",
+      "void main(){",
+      "  float foc=focusAmt(vLobe);",
+      "  float inf=infection(vW);",
+      "  vec3 col=mix(vec3(0.45,0.80,1.0), mix(uMold2, vec3(0.90,0.72,0.30), 0.35), inf);",
+      "  float alpha=(0.28+0.45*foc) * (0.7+0.3*sin(uTime*3.0+vW.x*8.0));",
+      "  if(uHolo>0.01) col=mix(col, vec3(0.4,0.95,1.0), uHolo*0.4);",
+      "  gl_FragColor=vec4(col, clamp(alpha,0.0,0.85));",
+      "}"
+    ].join("\n")
+  });
+}
+
+function buildLocalSynapses(samples, low) {
+  var n = samples.length;
+  var cell = 0.085;
+  var buckets = Object.create(null);
+  function key(ix, iy, iz) { return ix + "," + iy + "," + iz; }
+  for (var i = 0; i < n; i++) {
+    var s = samples[i];
+    var k = key(Math.floor(s.x / cell), Math.floor(s.y / cell), Math.floor(s.z / cell));
+    (buckets[k] || (buckets[k] = [])).push(i);
+  }
+  var maxLines = low ? 2200 : 7000;
+  var pos = [], col = [], lobe = [], phase = [], uu = [];
+  var used = 0;
+  var stride = Math.max(1, Math.floor(n / (maxLines * 1.4)));
+  for (var a = 0; a < n && used < maxLines; a += stride) {
+    var sa = samples[a];
+    var ax = Math.floor(sa.x / cell), ay = Math.floor(sa.y / cell), az = Math.floor(sa.z / cell);
+    var best1 = -1, bd1 = 0.014, best2 = -1, bd2 = 0.014;
+    for (var dx = -1; dx <= 1; dx++) {
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dz = -1; dz <= 1; dz++) {
+          var list = buckets[key(ax + dx, ay + dy, az + dz)];
+          if (!list) continue;
+          for (var t = 0; t < list.length; t++) {
+            var b = list[t];
+            if (b <= a) continue;
+            var sb = samples[b];
+            var ddx = sa.x - sb.x, ddy = sa.y - sb.y, ddz = sa.z - sb.z;
+            var d2 = ddx * ddx + ddy * ddy + ddz * ddz;
+            if (d2 < 0.0004 || d2 > 0.014) continue;
+            if (d2 < bd1) { bd2 = bd1; best2 = best1; bd1 = d2; best1 = b; }
+            else if (d2 < bd2) { bd2 = d2; best2 = b; }
+          }
+        }
+      }
+    }
+    var pair = [best1, best2];
+    for (var p = 0; p < pair.length; p++) {
+      var b = pair[p];
+      if (b < 0 || used >= maxLines) continue;
+      var sb = samples[b];
+      var ca = lobeTint(sa.lobe), cb = lobeTint(sb.lobe);
+      pos.push(sa.x, sa.y, sa.z, sb.x, sb.y, sb.z);
+      col.push(ca.r, ca.g, ca.b, cb.r, cb.g, cb.b);
+      var lid = sa.lobe || sb.lobe;
+      lobe.push(lid, lid);
+      var ph = (a * 0.37 + b * 0.13) % 6.2832;
+      phase.push(ph, ph);
+      uu.push(0, 1);
+      used++;
+    }
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute("aLobe", new THREE.Float32BufferAttribute(lobe, 1));
+  geo.setAttribute("aPhase", new THREE.Float32BufferAttribute(phase, 1));
+  geo.setAttribute("aU", new THREE.Float32BufferAttribute(uu, 1));
+  geo.computeBoundingSphere();
+  var lines = new THREE.LineSegments(geo, lineNetMaterial());
+  lines.renderOrder = 3;
+  lines.frustumCulled = true;
+  return lines;
+}
+
+function buildEntangleLinks(samples, low) {
+  var rng = mulberry32(0xE7A6);
+  var nWant = low ? 14 : 28;
+  var pos = [], col = [], lobe = [], phase = [], uu = [];
+  var n = samples.length;
+  if (n < 8) return null;
+  var tries = 0;
+  var made = 0;
+  while (made < nWant && tries < nWant * 40) {
+    tries++;
+    var i = Math.floor(rng() * n);
+    var j = Math.floor(rng() * n);
+    if (i === j) continue;
+    var a = samples[i], b = samples[j];
+    if (a.lobe && b.lobe && a.lobe === b.lobe) continue;
+    var dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+    var d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 < 0.35 || d2 > 2.8) continue;
+    var mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5, z: (a.z + b.z) * 0.5 };
+    var lift = 0.08 + rng() * 0.06;
+    var len = Math.sqrt(mid.x * mid.x + mid.y * mid.y + mid.z * mid.z) || 1;
+    mid.x += mid.x / len * lift;
+    mid.y += mid.y / len * lift + 0.04;
+    mid.z += mid.z / len * lift;
+    var segs = 6;
+    var ph = rng() * 6.2832;
+    var goldish = rng() > 0.45;
+    var c1 = goldish ? new THREE.Color(COLOR.gold) : new THREE.Color(COLOR.violet);
+    var c2 = goldish ? new THREE.Color(0xFFE6A0) : new THREE.Color(0xC5B0FF);
+    function bez(t) {
+      var o = 1 - t;
+      return {
+        x: o * o * a.x + 2 * o * t * mid.x + t * t * b.x,
+        y: o * o * a.y + 2 * o * t * mid.y + t * t * b.y,
+        z: o * o * a.z + 2 * o * t * mid.z + t * t * b.z
+      };
+    }
+    for (var s = 0; s < segs; s++) {
+      var p0 = bez(s / segs), p1 = bez((s + 1) / segs);
+      pos.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
+      var u0 = s / segs, u1 = (s + 1) / segs;
+      col.push(c1.r, c1.g, c1.b, c2.r, c2.g, c2.b);
+      lobe.push(a.lobe, b.lobe);
+      phase.push(ph, ph);
+      uu.push(u0, u1);
+    }
+    made++;
+  }
+  if (!pos.length) return null;
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute("aLobe", new THREE.Float32BufferAttribute(lobe, 1));
+  geo.setAttribute("aPhase", new THREE.Float32BufferAttribute(phase, 1));
+  geo.setAttribute("aU", new THREE.Float32BufferAttribute(uu, 1));
+  geo.computeBoundingSphere();
+  var lines = new THREE.LineSegments(geo, lineNetMaterial());
+  lines.renderOrder = 4;
+  lines.frustumCulled = true;
+  return lines;
+}
+
+function attachNetwork(samples) {
+  netSamples = samples || [];
+  electronData = [];
+  makeNetUniforms();
+  syncNetRes();
+  var low = state.low;
+  var n = netSamples.length;
+  if (!n) return;
+
+  var pos = new Float32Array(n * 3);
+  var col = new Float32Array(n * 3);
+  var lobes = new Float32Array(n);
+  var phase = new Float32Array(n);
+  var sizes = new Float32Array(n);
+  var c = new THREE.Color();
+  for (var i = 0; i < n; i++) {
+    var s = netSamples[i];
+    pos[i * 3] = s.x; pos[i * 3 + 1] = s.y; pos[i * 3 + 2] = s.z;
+    c.copy(lobeTint(s.lobe));
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    lobes[i] = s.lobe;
+    phase[i] = (i * 12.9898) % 6.2832;
+    sizes[i] = (low ? 0.050 : 0.038) * (0.80 + (i % 7) * 0.04);
+  }
+  var geoA = new THREE.BufferGeometry();
+  geoA.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geoA.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  geoA.setAttribute("aLobe", new THREE.BufferAttribute(lobes, 1));
+  geoA.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
+  geoA.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+  geoA.computeBoundingSphere();
+  netAtoms = new THREE.Points(geoA, atomMaterial());
+  netAtoms.renderOrder = 5;
+  netAtoms.frustumCulled = true;
+  brainPivot.add(netAtoms);
+
+  /* quantum dust + interference */
+  var nDust = Math.min(n, low ? 1100 : 2600);
+  var dStep = Math.max(1, Math.floor(n / nDust));
+  var dpos = [], dcol = [], dlobe = [], dph = [], dsz = [];
+  for (var d = 0; d < n; d += dStep) {
+    var sd = netSamples[d];
+    dpos.push(sd.x, sd.y, sd.z);
+    var dc = (d % 11 === 0) ? new THREE.Color(COLOR.gold) : ((d % 5 === 0) ? new THREE.Color(COLOR.violet) : new THREE.Color(COLOR.electric));
+    dcol.push(dc.r, dc.g, dc.b);
+    dlobe.push(sd.lobe);
+    dph.push((d * 7.13) % 6.2832);
+    dsz.push(low ? 0.030 : 0.024);
+  }
+  /* stellar halo — silhouette just outside the brain */
+  var hStep = low ? 8 : 5;
+  for (var h = 0; h < n; h += hStep) {
+    var sh = netSamples[h];
+    var len = Math.sqrt(sh.x * sh.x + sh.y * sh.y + sh.z * sh.z) || 1;
+    var k = 1.085;
+    dpos.push(sh.x / len * len * k, sh.y / len * len * k, sh.z / len * len * k);
+    var hc = (h % 9 === 0) ? new THREE.Color(COLOR.gold) : new THREE.Color(0x3A7CFF);
+    dcol.push(hc.r, hc.g, hc.b);
+    dlobe.push(sh.lobe);
+    dph.push((h * 3.7) % 6.2832);
+    dsz.push(low ? 0.024 : 0.020);
+  }
+  /* inner quantum cores */
+  var nCore = low ? 8 : 14;
+  for (var q = 0; q < nCore; q++) {
+    var sc = netSamples[Math.floor((q + 0.5) * n / nCore) % n];
+    dpos.push(sc.x * 0.38, sc.y * 0.38, sc.z * 0.38);
+    var cc = (q % 2) ? new THREE.Color(COLOR.gold) : new THREE.Color(COLOR.violet);
+    dcol.push(cc.r, cc.g, cc.b);
+    dlobe.push(sc.lobe || 11);
+    dph.push(q * 1.7);
+    dsz.push(low ? 0.070 : 0.080);
+  }
+  var geoD = new THREE.BufferGeometry();
+  geoD.setAttribute("position", new THREE.Float32BufferAttribute(dpos, 3));
+  geoD.setAttribute("color", new THREE.Float32BufferAttribute(dcol, 3));
+  geoD.setAttribute("aLobe", new THREE.Float32BufferAttribute(dlobe, 1));
+  geoD.setAttribute("aPhase", new THREE.Float32BufferAttribute(dph, 1));
+  geoD.setAttribute("aSize", new THREE.Float32BufferAttribute(dsz, 1));
+  geoD.computeBoundingSphere();
+  netDust = new THREE.Points(geoD, dustMaterial());
+  netDust.renderOrder = 2;
+  brainPivot.add(netDust);
+
+  netSynapses = buildLocalSynapses(netSamples, low);
+  if (netSynapses) brainPivot.add(netSynapses);
+  netLinks = buildEntangleLinks(netSamples, low);
+  if (netLinks) brainPivot.add(netLinks);
+
+  /* orbital rings + electrons */
+  var nRings = low ? 22 : 56;
+  var ringStep = Math.max(1, Math.floor(n / nRings));
+  var ringPts = [], ringCol = [];
+  var rSeg = 22;
+  electronData = [];
+  var epos = [], ecol = [], esz = [];
+  var eIdx = 0;
+  for (var r = 0, ri = 0; r < n && ri < nRings; r += ringStep, ri++) {
+    var sr = netSamples[r];
+    var rad = 0.016 + (ri % 5) * 0.0028;
+    var nx = sr.x, ny = sr.y, nz = sr.z;
+    var nlen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    nx /= nlen; ny /= nlen; nz /= nlen;
+    var ax, ay, az, bx, by, bz;
+    if (Math.abs(ny) < 0.9) { ax = ny; ay = -nx; az = 0; }
+    else { ax = 0; ay = -nz; az = ny; }
+    var al = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
+    ax /= al; ay /= al; az /= al;
+    bx = ny * az - nz * ay;
+    by = nz * ax - nx * az;
+    bz = nx * ay - ny * ax;
+    var rc = (ri % 4 === 0) ? new THREE.Color(COLOR.gold) : ((ri % 3 === 0) ? new THREE.Color(COLOR.violet) : new THREE.Color(COLOR.electric));
+    for (var rs = 0; rs < rSeg; rs++) {
+      var a0 = (rs / rSeg) * Math.PI * 2;
+      var a1 = ((rs + 1) / rSeg) * Math.PI * 2;
+      var x0 = sr.x + (Math.cos(a0) * ax + Math.sin(a0) * bx) * rad;
+      var y0 = sr.y + (Math.cos(a0) * ay + Math.sin(a0) * by) * rad;
+      var z0 = sr.z + (Math.cos(a0) * az + Math.sin(a0) * bz) * rad;
+      var x1 = sr.x + (Math.cos(a1) * ax + Math.sin(a1) * bx) * rad;
+      var y1 = sr.y + (Math.cos(a1) * ay + Math.sin(a1) * by) * rad;
+      var z1 = sr.z + (Math.cos(a1) * az + Math.sin(a1) * bz) * rad;
+      ringPts.push(x0, y0, z0, x1, y1, z1);
+      ringCol.push(rc.r, rc.g, rc.b, rc.r, rc.g, rc.b);
+    }
+    var nEl = low ? 1 : 2;
+    for (var e = 0; e < nEl; e++) {
+      electronData.push({
+        cx: sr.x, cy: sr.y, cz: sr.z,
+        ax: ax, ay: ay, az: az,
+        bx: bx, by: by, bz: bz,
+        r: rad,
+        speed: 1.4 + (ri % 6) * 0.35,
+        phase: ri * 0.7 + e * Math.PI,
+        gold: (ri % 4 === 0)
+      });
+      epos.push(sr.x, sr.y, sr.z);
+      if (ri % 4 === 0) ecol.push(0.91, 0.76, 0.35);
+      else if (ri % 3 === 0) ecol.push(0.55, 0.42, 1.0);
+      else ecol.push(0.30, 0.80, 1.0);
+      esz.push(low ? 0.07 : 0.06);
+      eIdx++;
+    }
+  }
+  if (ringPts.length) {
+    var geoR = new THREE.BufferGeometry();
+    geoR.setAttribute("position", new THREE.Float32BufferAttribute(ringPts, 3));
+    geoR.setAttribute("color", new THREE.Float32BufferAttribute(ringCol, 3));
+    var rmat = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.48,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    netRings = new THREE.LineSegments(geoR, rmat);
+    netRings.renderOrder = 6;
+    brainPivot.add(netRings);
+  }
+  if (epos.length) {
+    var geoE = new THREE.BufferGeometry();
+    geoE.setAttribute("position", new THREE.Float32BufferAttribute(epos, 3));
+    geoE.setAttribute("color", new THREE.Float32BufferAttribute(ecol, 3));
+    geoE.setAttribute("aSize", new THREE.Float32BufferAttribute(esz, 1));
+    netElectrons = new THREE.Points(geoE, electronMaterial());
+    netElectrons.renderOrder = 8;
+    brainPivot.add(netElectrons);
+  }
+}
+
+function updateElectrons(t) {
+  if (!netElectrons || !electronData.length) return;
+  var attr = netElectrons.geometry.getAttribute("position");
+  for (var i = 0; i < electronData.length; i++) {
+    var e = electronData[i];
+    var a = t * e.speed + e.phase;
+    var ca = Math.cos(a), sa = Math.sin(a);
+    attr.setXYZ(
+      i,
+      e.cx + (ca * e.ax + sa * e.bx) * e.r,
+      e.cy + (ca * e.ay + sa * e.by) * e.r,
+      e.cz + (ca * e.az + sa * e.bz) * e.r
+    );
+  }
+  attr.needsUpdate = true;
+}
+
+function sampleProceduralCloud() {
+  var low = state.low;
+  var detail = low ? 4 : 6;
+  var geo = new THREE.IcosahedronGeometry(1, detail);
+  var pos = geo.getAttribute("position");
+  var v = new THREE.Vector3();
+  var out = [];
+  var step = low ? 2 : 1;
+  for (var i = 0; i < pos.count; i += step) {
+    v.fromBufferAttribute(pos, i);
+    var d = deformBrain(v.x, v.y, v.z);
+    out.push({ x: d.x, y: d.y, z: d.z, lobe: lobeIdFromPos(d.x, d.y, d.z), name: "cortex_proc" });
+  }
+  geo.dispose();
+  /* cerebellum + stem volumes */
+  var rng = mulberry32(0xC10);
+  var nCb = low ? 400 : 900;
+  for (var c = 0; c < nCb; c++) {
+    var u = rng() * Math.PI * 2;
+    var w = Math.acos(2 * rng() - 1);
+    var rr = Math.pow(rng(), 0.55);
+    var x = Math.sin(w) * Math.cos(u) * 0.38 * 1.15 * rr;
+    var y = Math.cos(w) * 0.38 * 0.7 * rr - 0.72;
+    var z = Math.sin(w) * Math.sin(u) * 0.38 * 0.85 * rr - 0.22;
+    out.push({ x: x, y: y, z: z, lobe: x < 0 ? 9 : 10, name: "cerebellum_proc" });
+  }
+  var nSt = low ? 120 : 260;
+  for (var s = 0; s < nSt; s++) {
+    var t = rng();
+    var ang = rng() * Math.PI * 2;
+    var rad = (0.12 + (0.16 - 0.12) * t) * Math.sqrt(rng());
+    out.push({
+      x: Math.cos(ang) * rad,
+      y: -0.85 + (t - 0.5) * 0.45,
+      z: 0.05 + Math.sin(ang) * rad,
+      lobe: 11,
+      name: "brainstem_proc"
+    });
+  }
+  return out;
 }
 
 function buildFromAssets(gltf, tractList, metaIn, opts) {
@@ -1614,9 +2249,11 @@ function buildFromAssets(gltf, tractList, metaIn, opts) {
       if (o.isMesh) meshes.push(o);
     });
     meshes.forEach(function (m) {
-      addTissueMesh(m, kindOfName(m.name));
+      bakeMeshWorld(m);
+      makePickMesh(m);
       brainPivot.add(m);
     });
+    attachNetwork(sampleMeshes(meshes));
   }
   applySeedUniforms();
   var built = buildTractLines(fibers, state.low);
@@ -1634,7 +2271,7 @@ function buildFromAssets(gltf, tractList, metaIn, opts) {
     new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.62,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: true
@@ -1649,7 +2286,7 @@ function buildFromAssets(gltf, tractList, metaIn, opts) {
       color: COLOR.glow,
       size: state.low ? 0.045 : 0.035,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.62,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       sizeAttenuation: true
@@ -1735,20 +2372,20 @@ function buildProcedural(opts) {
   fibers = buildProceduralTracts();
   brainPivot = new THREE.Group();
   var hull = proceduralHull();
-  addTissueMesh(hull, "cortex");
+  makePickMesh(hull);
   brainPivot.add(hull);
-  /* simple cerebellum / stem */
   var cb = new THREE.Mesh(new THREE.SphereGeometry(0.38, 20, 16));
   cb.scale.set(1.15, 0.7, 0.85);
   cb.position.set(0, -0.72, -0.22);
   cb.name = "cerebellum_proc";
-  addTissueMesh(cb, "cerebellum");
+  makePickMesh(cb);
   brainPivot.add(cb);
   var st = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.45, 12));
   st.position.set(0, -0.85, 0.05);
   st.name = "brainstem_proc";
-  addTissueMesh(st, "brainstem");
+  makePickMesh(st);
   brainPivot.add(st);
+  attachNetwork(sampleProceduralCloud());
   applySeedUniforms();
   var built = buildTractLines(fibers, state.low);
   tractLines = built.lines;
@@ -1762,7 +2399,7 @@ function buildProcedural(opts) {
   hyphaLines = new THREE.LineSegments(
     new THREE.BufferGeometry(),
     new THREE.LineBasicMaterial({
-      vertexColors: true, transparent: true, opacity: 0.95,
+      vertexColors: true, transparent: true, opacity: 0.62,
       blending: THREE.AdditiveBlending, depthWrite: false
     })
   );
@@ -1771,7 +2408,7 @@ function buildProcedural(opts) {
   sporePts = new THREE.Points(
     new THREE.BufferGeometry(),
     new THREE.PointsMaterial({
-      color: COLOR.glow, size: 0.035, transparent: true, opacity: 0.95,
+      color: COLOR.glow, size: 0.035, transparent: true, opacity: 0.62,
       blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
     })
   );
@@ -1847,7 +2484,7 @@ function mount(el, opts) {
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
   renderer.domElement.style.touchAction = "none";
-  renderer.domElement.setAttribute("aria-label", "Trójwymiarowa mapa pamięci firmy w kształcie mózgu, ze szlakami istoty białej");
+  renderer.domElement.setAttribute("aria-label", "Trójwymiarowa sieć pamięci firmy w kształcie mózgu: neurony, synapsy i szlaki świetlne");
   el.innerHTML = "";
   el.appendChild(renderer.domElement);
   var hint = document.createElement("div");
@@ -1857,17 +2494,17 @@ function mount(el, opts) {
   state.hint = hint;
   buildHud(el);
 
-  scene.add(new THREE.AmbientLight(0x1A3A48, 1.35));
-  var key = new THREE.DirectionalLight(0xE8F4FF, 1.15);
+  scene.add(new THREE.AmbientLight(0x152038, 0.7));
+  var key = new THREE.DirectionalLight(0x8EC8FF, 0.4);
   key.position.set(-1.4, 1.9, 1.7);
   scene.add(key);
-  var fill = new THREE.DirectionalLight(0x1E7F94, 0.55);
+  var fill = new THREE.DirectionalLight(0x1E7F94, 0.28);
   fill.position.set(1.6, -0.3, -1.1);
   scene.add(fill);
-  var rim = new THREE.DirectionalLight(0x5CE6F2, 0.35);
+  var rim = new THREE.DirectionalLight(0x8B6CFF, 0.25);
   rim.position.set(0.2, 0.4, -1.8);
   scene.add(rim);
-  infectLight = new THREE.PointLight(COLOR.mold, 1.0, 8, 1.4);
+  infectLight = new THREE.PointLight(COLOR.glow, 0.7, 8, 1.4);
   infectLight.position.set(0, -0.2, 0.2);
   scene.add(infectLight);
 
@@ -1937,7 +2574,10 @@ function tick() {
       applyInfection(eased);
     }
   }
-  if (!reduceMotion) updatePulses(t);
+  if (!reduceMotion) {
+    updatePulses(t);
+    updateElectrons(t);
+  }
   applyHoloTime(t);
   tickCam();
   if (controls) controls.update();

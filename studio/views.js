@@ -859,8 +859,32 @@
     navigator.serviceWorker.register("sw.js").catch(function () {});
   }
 
+  function applyHudCollapse(on) {
+    document.body.classList.toggle("hud-collapsed", !!on);
+    var b = document.getElementById("hudToggle");
+    if (b) {
+      b.setAttribute("aria-expanded", on ? "false" : "true");
+      b.textContent = on ? "Rozwiń panel" : "Zwiń panel";
+    }
+    try { localStorage.setItem("rss-hud-collapsed", on ? "1" : "0"); } catch (e) {}
+    var api = w.RSS && w.RSS.brain3d;
+    if (api && api.resize) setTimeout(function () { api.resize(); }, 50);
+  }
+  function bindHudToggle() {
+    var b = document.getElementById("hudToggle");
+    if (!b || b._rssBound) return;
+    b._rssBound = true;
+    var saved = false;
+    try { saved = localStorage.getItem("rss-hud-collapsed") === "1"; } catch (e) {}
+    applyHudCollapse(saved);
+    b.onclick = function () {
+      applyHudCollapse(!document.body.classList.contains("hud-collapsed"));
+    };
+  }
+  bindHudToggle();
+
   w.RSS = w.RSS || {};
-  w.RSS.views = { render: render, setLabel: setLabel, labels: LABELS, openNode: openNode, getCy: function () { return cy; }, syncBrainShell: syncBrainShell, mountWorld: mountWorld };
+  w.RSS.views = { render: render, setLabel: setLabel, labels: LABELS, openNode: openNode, getCy: function () { return cy; }, syncBrainShell: syncBrainShell, mountWorld: mountWorld, applyHudCollapse: applyHudCollapse };
   w.addEventListener("rss-brain-progress", function (ev) {
     var v = ev.detail && ev.detail.progress;
     if (v == null) return;

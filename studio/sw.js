@@ -1,5 +1,5 @@
 /* Service worker PWA — cache powłoki. Nigdy nie cache'uje Apps Script ani URL z tokenem. */
-var CACHE = "rss-v2-6";
+var CACHE = "rss-v2-8";
 var PRECACHE = [
   "./",
   "./index.html",

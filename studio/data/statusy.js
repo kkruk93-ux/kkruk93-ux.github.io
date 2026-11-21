@@ -1,0 +1,91 @@
+window.RSS_STATUSY = {
+  "aktualizacja": "2026-11-21 09:50",
+  "strefa": "Europe/Berlin",
+  "uwaga": "Lampki: pracuje / czeka / wolne. Ten plik można aktualizować bez zmiany reszty aplikacji. Bez danych osobowych.",
+  "agenci": {
+    "mostek": {
+      "status": "pracuje",
+      "notatka": "Prowadzi zebranie firmy; przygotowuje oficjalną aplikację biura."
+    },
+    "novi": {
+      "status": "wolne",
+      "notatka": "Nadzór na prośbę."
+    },
+    "budzet": {
+      "status": "wolne",
+      "notatka": "Tylko na prośbę."
+    },
+    "rovi": {
+      "status": "wolne",
+      "notatka": "Szef zespołu Rovi Here."
+    },
+    "x": {
+      "status": "wolne",
+      "notatka": "Dział X publikuje na @RoviHere."
+    },
+    "prof": {
+      "status": "wolne",
+      "notatka": "Lekcja i ciekawostka w stałym rytmie; poza tym na prośbę."
+    },
+    "pomysly": {
+      "status": "czeka",
+      "notatka": "Pomysły czekają na decyzje o kontach i publikacji."
+    },
+    "weryfikator": {
+      "status": "wolne",
+      "notatka": "Na prośbę."
+    },
+    "marketing": {
+      "status": "wolne",
+      "notatka": "Doradza, nie publikuje."
+    },
+    "bluemold": {
+      "status": "wolne",
+      "notatka": "Szef zespołu Blue Mold."
+    },
+    "ksiazka": {
+      "status": "czeka",
+      "notatka": "Tom 1 PL gotowy; publikacja KDP czeka na decyzję szefa głównego."
+    },
+    "suno": {
+      "status": "wolne",
+      "notatka": "Na prośbę, bez rutyn."
+    },
+    "yt": {
+      "status": "czeka",
+      "notatka": "Dziś o 21:00 (Berlin) Short już zaplanowany."
+    },
+    "studio": {
+      "status": "wolne",
+      "notatka": "Miniatury i okładki odtwarzalne skryptem."
+    },
+    "tiktok": {
+      "status": "wolne",
+      "notatka": "Paczki często przygotowuje Mostek; dział reklam na prośbę."
+    },
+    "playstudio": {
+      "status": "czeka",
+      "notatka": "Gry gotowe; publikację w sklepie robi szef główny."
+    },
+    "github": {
+      "status": "wolne",
+      "notatka": "Szuka darmowych repo, szablonów i silników (z licencją)."
+    },
+    "wymowa": {
+      "status": "wolne",
+      "notatka": "Polskie teksty do Suno idą tu przed generacją."
+    },
+    "optymalizacja": {
+      "status": "wolne",
+      "notatka": "HR i usprawnienia; nowe etaty tylko za zgodą szefa głównego."
+    },
+    "parafraza": {
+      "status": "wolne",
+      "notatka": "Parafrazy stylu bez nazw własnych artystów i filmów."
+    },
+    "furtka": {
+      "status": "wolne",
+      "notatka": "Włącza się, gdy dział utknie."
+    }
+  }
+};

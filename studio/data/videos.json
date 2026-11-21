@@ -1,0 +1,33 @@
+{
+  "uwaga": "Tylko oficjalne teledyski Blue Mold z potwierdzonym publicznym linkiem w plikach. Brak linku = pozycja nie jest dopisywana. Płatności i logowanie są wyłączone.",
+  "abonament": {
+    "status": "wylaczony",
+    "opis_en": "Downloads are free. Account login and subscriptions are not enabled in this version. The catalog is structured so a future free or paid tier can be added later, without payments or sign-in now."
+  },
+  "wsparcie": {
+    "linia": "☕ Support the channel (BTC): bc1qd05h6spuj8dqf9rs9fu4re9rh4q6k0gflfqum8",
+    "btc": "bc1qd05h6spuj8dqf9rs9fu4re9rh4q6k0gflfqum8",
+    "suno": "https://suno.com/@kkruk93",
+    "zrodlo": "blue-mold/teledysk-glass-between-us/YT_OPIS_v2.txt (oraz youtube/STYL.md)"
+  },
+  "filmy": [
+    {
+      "id": "glass-between-us-v2",
+      "tytul": "Blue Mold – Glass Between Us (Official Music Video)",
+      "wersja": "v2",
+      "jezyk_opisu": "en",
+      "opis": "Somewhere between the stars, two people share nothing but a quarantine window, a finger's width of glass and the fear of what might be growing on either side. A fragile acoustic ballad that shatters into metal, about loneliness, love and the hope of one more touch.",
+      "ogladaj_url": "https://drive.google.com/file/d/176ArSlrhvbLJBsXMV7iog-BFTvOLnQYp/view",
+      "pobierz_url": "https://drive.google.com/uc?export=download&id=176ArSlrhvbLJBsXMV7iog-BFTvOLnQYp",
+      "okladka": "assets/videos/glass-between-us.jpg",
+      "suno": "https://suno.com/@kkruk93",
+      "youtube_kanal": "https://www.youtube.com/@RoviHere",
+      "zrodlo_linku": "blue-mold/teledysk-glass-between-us/klipy/LOG.md",
+      "zrodlo_opisu": "blue-mold/teledysk-glass-between-us/YT_OPIS_v2.txt",
+      "dostep": "publiczny",
+      "abonament_wymagany": false
+    }
+  ],
+  "wygenerowano": "2026-11-21 10:41",
+  "strefa": "Europe/Berlin"
+}

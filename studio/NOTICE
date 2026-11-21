@@ -1,0 +1,26 @@
+Rovi & Shadow Studio — uwagi licencyjne (tylko darmowe biblioteki)
+
+Cytoscape.js 3.30.4
+  Copyright (c) 2016-2024, The Cytoscape Consortium
+  License: MIT
+  Pliki: lib/cytoscape.min.js, lib/cytoscape.LICENSE.txt
+  https://github.com/cytoscape/cytoscape.js
+
+Pomysły (bez kopiowania kodu) z przeglądu publicznych repozytoriów Grok Bot
+wymienionych w poście @Bober_smart (listopad 2026), wyłącznie tam, gdzie
+licencja pozwalała na inspirację i nie kopiowaliśmy kodu z repo bez MIT/Apache/BSD:
+
+  tiagovilasboas/grok-bot-architecture — MIT — role i zatwierdzenia
+  Archive228/foreman — MIT — karta na bota, statusy, „stale-not-blank”
+  mandarwagh9/botroster — Apache-2.0 — nazwani członkowie zespołu (pomysł)
+  ShuhangGe/grokbot-queue — MIT — kolejka / status (pomysł; bez automatyzacji UI)
+  cobusgreyling/grok-bot-templates — MIT
+  dimpurr/grok-bot-gateway — Apache-2.0
+  YannisKiefer/grokbot-x — MIT
+  mKay00/grok-bot-second-brain — brak licencji: tylko pomysł mapy wiedzy, zero kodu
+
+Repozytoria sprawdzone, ale nie użyte (404 albo licencja niepozwalająca na kopiowanie kodu):
+  seranakeyitan/agent-org-chart — 404 (pomysł schematu org z treści tweeta)
+  MrBekoX/root-agent — 404
+  HAEGONG/grok-bot-profiles — CC-BY-4.0 (nie kopiujemy kodu)
+  jaredtrichard/grok-factory, jeremybrasher/grokbot-skills — brak licencji (nie kopiujemy kodu)

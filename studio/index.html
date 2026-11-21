@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#05080F">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Rovi &amp; Shadow">
+  <title>Rovi &amp; Shadow Studio</title>
+  <meta name="description" content="Oficjalna aplikacja biura i sterowania firmą Rovi &amp; Shadow Studio.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="assets/rovi-shadow-192.png">
+  <link rel="apple-touch-icon" href="assets/rovi-shadow-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-view="biuro">
+  <div class="grain" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <aside id="sidenav" aria-label="Nawigacja">
+    <div class="side-brand">
+      <picture>
+        <source srcset="assets/rovi-shadow-192.webp" type="image/webp">
+        <img src="assets/rovi-shadow-192.png" width="48" height="48" alt="Rovi i Shadow">
+      </picture>
+      <div>
+        <strong>Rovi &amp; Shadow</strong>
+        <small>Studio · panel firmy</small>
+      </div>
+    </div>
+    <nav class="side-nav">
+      <p class="nav-g">Firma</p>
+      <button type="button" data-tab="biuro" class="on"><span class="ico" aria-hidden="true">◆</span>Biuro</button>
+      <button type="button" data-tab="bibl"><span class="ico" aria-hidden="true">◎</span>Biblioteka</button>
+      <button type="button" data-tab="art"><span class="ico" aria-hidden="true">¶</span>Artykuły</button>
+      <button type="button" data-tab="vid"><span class="ico" aria-hidden="true">▶</span>Filmy</button>
+      <button type="button" data-tab="org"><span class="ico" aria-hidden="true">☰</span>Struktura</button>
+      <p class="nav-g szef-only">Praca</p>
+      <button type="button" class="szef-only" data-tab="cmd"><span class="ico" aria-hidden="true">✉</span>Polecenia</button>
+      <button type="button" class="szef-only" data-tab="list"><span class="ico" aria-hidden="true">≡</span>Rejestr</button>
+      <button type="button" data-tab="kal"><span class="ico" aria-hidden="true">◷</span>Kalendarz</button>
+      <button type="button" class="szef-only" data-tab="dec"><span class="ico" aria-hidden="true">▣</span>Decyzje</button>
+      <p class="nav-g">Stan</p>
+      <button type="button" data-tab="zar"><span class="ico" aria-hidden="true">◈</span>Zarabianie</button>
+      <button type="button" class="szef-only" data-tab="zuz"><span class="ico" aria-hidden="true">▴</span>Zużycie</button>
+      <button type="button" data-tab="kan"><span class="ico" aria-hidden="true">↗</span>Kanały</button>
+      <p class="nav-g">System</p>
+      <button type="button" data-tab="settings"><span class="ico" aria-hidden="true">⬡</span>Szef / Łącze</button>
+    </nav>
+    <p class="side-foot" id="szefFoot">Tryb publiczny. Polecenia, decyzje i limit są schowane — odblokujesz je tokenem w Szef / Łącze.</p>
+  </aside>
+
+  <header class="app-bar">
+    <div class="brand">
+      <picture class="brand-mark">
+        <source srcset="assets/rovi-shadow-192.webp" type="image/webp">
+        <img src="assets/rovi-shadow-192.png" width="40" height="40" alt="Rovi i Shadow">
+      </picture>
+      <div>
+        <h1>Rovi &amp; Shadow Studio</h1>
+        <small id="viewLabel">Biuro główne · sterowanie firmą</small>
+      </div>
+    </div>
+    <div class="online" title="Aplikacja gotowa"><span class="dot"></span><span>Online</span></div>
+    <button type="button" class="icon-btn" id="btnInstall" hidden>Zainstaluj</button>
+  </header>
+
+  <div id="floor-wrap">
+    <svg id="floor" viewBox="0 0 1600 1040" width="1600" height="1040" role="img" aria-label="Plan biura Rovi and Shadow Studio, widok z góry"></svg>
+    <p class="hint">Przeciągnij, szczypnij albo kółko — zoom. Dotknij biurka albo portretu w gabinecie.</p>
+    <div class="zoom-tools">
+      <button type="button" id="zIn" title="Przybliż">+</button>
+      <button type="button" id="zOut" title="Oddal">−</button>
+      <button type="button" id="zFit" title="Całe biuro">⛶</button>
+      <button type="button" id="btnRosterM" title="Zespół" style="font-size:14px">☰</button>
+    </div>
+  </div>
+
+  <main id="stage">
+    <section id="view-bibl" class="view view-graph" hidden></section>
+    <section id="view-art" class="view" hidden></section>
+    <section id="view-vid" class="view" hidden></section>
+    <section id="view-org" class="view" hidden></section>
+    <section id="view-cmd" class="view" hidden></section>
+    <section id="view-list" class="view" hidden></section>
+    <section id="view-kal" class="view" hidden></section>
+    <section id="view-dec" class="view" hidden></section>
+    <section id="view-zar" class="view" hidden></section>
+    <section id="view-zuz" class="view" hidden></section>
+    <section id="view-kan" class="view" hidden></section>
+    <section id="view-settings" class="view" hidden></section>
+    <section id="view-more" class="view" hidden></section>
+  </main>
+
+  <aside id="sheet" role="dialog" aria-labelledby="sheetTitle" aria-modal="true">
+    <div class="sheet-head">
+      <div id="sheetExtra"></div>
+      <div style="min-width:0;flex:1">
+        <h2 id="sheetTitle">Panel</h2>
+        <div class="meta" id="sheetMeta"></div>
+      </div>
+      <button type="button" class="close" id="sheetClose" aria-label="Zamknij">×</button>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </aside>
+
+  <nav id="dock">
+    <button type="button" data-tab="biuro" class="on"><span class="ico">◆</span>Biuro</button>
+    <button type="button" data-tab="bibl"><span class="ico">◎</span>Biblioteka</button>
+    <button type="button" data-tab="art"><span class="ico">¶</span>Artykuły</button>
+    <button type="button" data-tab="vid"><span class="ico">▶</span>Filmy</button>
+    <button type="button" data-tab="more"><span class="ico">▣</span>Więcej</button>
+  </nav>
+
+  <script src="data/zespol.js"></script>
+  <script src="data/statusy.js"></script>
+  <script src="data/firma.js"></script>
+  <script src="data/biblioteka.js"></script>
+  <script src="data/articles.js"></script>
+  <script src="data/videos.js"></script>
+  <script src="lib/cytoscape.min.js"></script>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+  <script src="views.js"></script>
+</body>
+</html>

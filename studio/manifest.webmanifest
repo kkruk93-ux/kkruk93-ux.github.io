@@ -1,0 +1,16 @@
+{
+  "name": "Rovi & Shadow Studio",
+  "short_name": "Rovi & Shadow",
+  "description": "Oficjalna aplikacja biura i sterowania firmą.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05080F",
+  "theme_color": "#05080F",
+  "lang": "pl",
+  "icons": [
+    { "src": "assets/rovi-shadow-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/rovi-shadow-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

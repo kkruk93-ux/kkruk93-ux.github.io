@@ -70,6 +70,8 @@
     <button type="button" class="icon-btn" id="btnInstall" hidden>Zainstaluj</button>
   </header>
 
+  <div id="brain-world" hidden aria-hidden="true"></div>
+
   <div id="floor-wrap">
     <svg id="floor" viewBox="0 0 1600 1040" width="1600" height="1040" role="img" aria-label="Plan biura Rovi and Shadow Studio, widok z góry"></svg>
     <p class="hint">Przeciągnij, szczypnij albo kółko — zoom. Dotknij biurka albo portretu w gabinecie.</p>
@@ -82,6 +84,10 @@
   </div>
 
   <main id="stage">
+    <section id="view-biuro" class="view" hidden>
+      <div class="view-head"><h2>Biuro</h2><p class="meta">Gabinet, sala i zespoły. Kamera stoi przy Mostku — spoidle, które łączy firmę.</p></div>
+      <div class="view-body" id="biuroSlot"></div>
+    </section>
     <section id="view-bibl" class="view view-graph" hidden></section>
     <section id="view-art" class="view" hidden></section>
     <section id="view-vid" class="view" hidden></section>

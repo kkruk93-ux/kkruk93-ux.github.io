@@ -9,10 +9,36 @@ Cytoscape.js 3.30.4
 three.js r170.0
   Copyright © 2010-2024 three.js authors
   License: MIT
-  Pliki: lib/three/three.module.min.js, lib/three/addons/controls/OrbitControls.js, lib/three/LICENSE.txt
+  Pliki: lib/three/three.module.min.js,
+         lib/three/addons/controls/OrbitControls.js,
+         lib/three/addons/loaders/GLTFLoader.js,
+         lib/three/addons/lines/* (Line2 / LineMaterial / LineSegments2),
+         lib/three/addons/utils/BufferGeometryUtils.js (minimalny stub symbolu
+         importowanego przez GLTFLoader; oryginalny plik three.js też jest MIT),
+         lib/three/LICENSE.txt
   https://github.com/mrdoob/three.js
-  Używane w Bibliotece do wizualizacji 3D mózgu (neurony, synapsy, infekcja Blue Mold).
-  Kształt mózgu jest generowany proceduralnie w brain3d.js — bez modelu z zewnątrz i bez AI.
+  Używane w Bibliotece do wizualizacji 3D mózgu (tkanka, szlaki DTI, impulsy,
+  infekcja Blue Mold, tryb badania).
+
+3D Reference Organ for Brain, Male, v1.3
+  Autorzy: Kristen Browne; Heidi Schlehlein (2023)
+  Wydawca: Human Reference Atlas / HuBMAP
+  DOI: https://doi.org/10.48539/HBM929.XKCL.339
+  NIH 3D: https://3d.nih.gov/entries/20960
+  Licencja: Creative Commons Attribution 4.0 International (CC BY 4.0)
+            https://creativecommons.org/licenses/by/4.0/
+  Źródło danych: Allen Human Reference Atlas – 3D, 2020 (Ding et al., 2016).
+  Pliki: assets/brain/brain-cortex.glb (kora, móżdżek, pień — scalone i
+         zredukowane na potrzeby telefonu), assets/brain/ATTRIBUTION.txt
+  Adaptacja: wybór siatek zewnętrznych, scalenie według płatów, redukcja
+  wielokątów. Brak poparcia (endorsement) ze strony autorów, HRA, Allen
+  Institute lub NIH.
+  Szlaki istoty białej (assets/brain/tracts.bin) są stylizowanymi, wygenerowanymi
+  włóknami w konwencji traktografii DTI — służą wizualizacji, nie są pomiarem
+  z atlasu DTI i nie pochodzą z modelu AI.
+  Figurki w trybie „Badanie kosmitów” są oryginalną, proceduralną geometrią
+  (bez modelu z zewnątrz i bez AI).
+  Gdy GLB nie wstanie, brain3d.js wraca do proceduralnego kształtu mózgu.
 
 Pomysły (bez kopiowania kodu) z przeglądu publicznych repozytoriów Grok Bot
 wymienionych w poście @Bober_smart (listopad 2026), wyłącznie tam, gdzie

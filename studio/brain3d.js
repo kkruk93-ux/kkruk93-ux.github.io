@@ -1,7 +1,22 @@
-/* Rovi & Shadow Studio — procedural 3D brain for Biblioteka.
-   three.js r170 MIT. Shape is generated here (no external model, no AI). */
+/* Rovi & Shadow Studio — 3D Biblioteka (mózg).
+   three.js r170 MIT.
+   Mesh: 3D Reference Organ for Brain, Male v1.3 — Kristen Browne &
+   Heidi Schlehlein (2023), Human Reference Atlas / HuBMAP, CC BY 4.0
+   (https://doi.org/10.48539/HBM929.XKCL.339), derived from the
+   Allen Human Reference Atlas – 3D, 2020 (Ding et al., 2016).
+   Adapted (lobe merge, decimation) for this app; no endorsement by the
+   authors, HRA, Allen Institute or NIH. See assets/brain/ATTRIBUTION.txt.
+   White-matter fibers are stylized DTI-like streamlines generated for
+   visualization, not a measured tractography atlas.
+   Examination figures are original procedural geometry (no AI, no third-party mesh).
+   Fallback: procedural hull if the GLB cannot be loaded.
+*/
 import * as THREE from "three";
 import { OrbitControls } from "./lib/three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "./lib/three/addons/loaders/GLTFLoader.js";
+import { LineSegments2 } from "./lib/three/addons/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "./lib/three/addons/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "./lib/three/addons/lines/LineMaterial.js";
 
 var COLOR = {
   void: 0x05080F,
@@ -18,6 +33,65 @@ var COLOR = {
   brak: 0x5B6B7A
 };
 
+var ASSET = {
+  glb: new URL("./assets/brain/brain-cortex.glb", import.meta.url).href,
+  tracts: new URL("./assets/brain/tracts.bin", import.meta.url).href,
+  meta: new URL("./assets/brain/brain-meta.json", import.meta.url).href
+};
+
+
+var TAB_LOBE = {
+  biuro: "cc",
+  bibl: "overview",
+  art: "temporal_L",
+  vid: "occipital_L",
+  org: "parietal_L",
+  kal: "frontal_R",
+  zar: "temporal_R",
+  kan: "occipital_R",
+  settings: "brainstem",
+  cmd: "frontal_L",
+  list: "parietal_R",
+  dec: "frontal_L",
+  zuz: "cerebellum_L",
+  more: "overview"
+};
+var LOBE_TAB = {
+  cc: "biuro",
+  frontal_L: "cmd",
+  frontal_R: "kal",
+  parietal_L: "org",
+  parietal_R: "list",
+  temporal_L: "art",
+  temporal_R: "zar",
+  occipital_L: "vid",
+  occipital_R: "kan",
+  cerebellum_L: "zuz",
+  cerebellum_R: "zuz",
+  brainstem: "settings"
+};
+var TAB_LABEL = {
+  biuro: "Biuro", bibl: "Biblioteka", art: "Artykuły", vid: "Filmy",
+  org: "Struktura", kal: "Kalendarz", zar: "Zarabianie", kan: "Kanały",
+  settings: "Szef / Łącze", cmd: "Polecenia", list: "Rejestr", dec: "Decyzje",
+  zuz: "Zużycie", more: "Więcej"
+};
+
+var LOBE_BUNDLES = {
+  frontal_L: ["slf_L", "arc_L", "ifof_L", "cst_L", "cing_L", "unc_L", "cc"],
+  frontal_R: ["slf_R", "arc_R", "ifof_R", "cst_R", "cing_R", "unc_R", "cc"],
+  parietal_L: ["slf_L", "cing_L", "cc"],
+  parietal_R: ["slf_R", "cing_R", "cc"],
+  temporal_L: ["arc_L", "ilf_L", "unc_L", "ac"],
+  temporal_R: ["arc_R", "ilf_R", "unc_R", "ac"],
+  occipital_L: ["ilf_L", "ifof_L", "or_L"],
+  occipital_R: ["ilf_R", "ifof_R", "or_R"],
+  cerebellum_L: ["cbp"],
+  cerebellum_R: ["cbp"],
+  brainstem: ["cst_L", "cst_R", "cbp"],
+  cc: ["cc"]
+};
+
 var state = {
   mounted: false,
   low: false,
@@ -27,18 +101,35 @@ var state = {
   playT0: 0,
   playDur: 12000,
   onOpen: null,
-  visible: null
+  visible: null,
+  sceneMode: "mold",
+  ready: false,
+  hint: null,
+  shellTab: "biuro",
+  libMode: false,
+  focusKey: "overview",
+  onNavigate: null
 };
 
 var renderer, scene, camera, controls, clock, ro, raf, container;
-var group, neuronPts, nodePts, synapseLines, hyphaLines, sporePts;
+var group, examGroup, brainPivot;
+var tractLines, tractMat, tractTubes, pulsePts, nodePts, hyphaLines, sporePts;
 var nodeIndex = [];
-var neuronBase, neuronColors, neuronPos;
 var nodeBase, nodeColors, nodeSizes;
-var hyphaPaths = [];
+var fibers = []; /* {name, pts: Float32Array(n*3), n} */
+var infectUniforms = [];
+var labelEls = [];
+var labelLayer, hud, eegCanvas, eegCtx;
 var infectLight, raycaster, pointer, pointerDown, pointerMoved;
 var reduceMotion = false;
 var lastHover = null;
+var meta = null;
+var calipers, scanRing;
+var pendingMode = null;
+var pendingShell = null;
+var lobeMeshes = {};
+var camFly = null;
+var activeBundles = null;
 
 function hash01(s) {
   var h = 2166136261;
@@ -58,86 +149,6 @@ function mulberry32(a) {
   };
 }
 
-function sulcus(x, y, z) {
-  var lon = Math.atan2(x, z);
-  var lat = Math.atan2(y, Math.sqrt(x * x + z * z));
-  var s =
-    0.55 * Math.sin(lon * 6.2 + lat * 1.4) * Math.sin(lat * 3.6 + 0.3) +
-    0.35 * Math.sin(lon * 11.0 - lat * 2.1) * Math.sin((lat + 0.2) * 7.1) +
-    0.22 * Math.sin(lon * 17.4 + lat * 8.2 + 1.1) +
-    0.12 * Math.sin(lon * 23.0 - y * 14.0);
-  var poles = Math.pow(Math.max(0, Math.cos(lat)), 1.15);
-  return Math.max(0, s) * poles;
-}
-
-function deformBrain(x, y, z) {
-  /* Two ellipsoidal hemispheres with a longitudinal fissure, sulci, temporal lobes. */
-  var side = x >= 0 ? 1 : -1;
-  var rx = 0.64, ry = 0.98, rz = 0.80;
-  var cX = side * (rx + 0.012); /* inner walls almost meet, leaving a narrow fissure */
-  var px = x * rx + cX;
-  var py = y * ry + 0.04;
-  var pz = z * rz + 0.04;
-  /* flatten the medial wall into a fissure */
-  var plane = side * 0.018;
-  if (px * side < 0.18) {
-    var tw = (px - plane) / (side * 0.18 - plane);
-    if (tw < 1) {
-      var flat = plane + (px - plane) * (0.25 + 0.75 * Math.max(0, tw));
-      px = flat;
-    }
-  }
-  /* frontal (z>0) wider and slightly taller */
-  if (pz > 0) {
-    px += side * 0.04 * pz;
-    py += 0.06 * pz;
-    pz *= 1.06;
-  }
-  /* occipital (z<0) slightly tucked */
-  if (pz < 0) {
-    px -= side * 0.03 * (-pz);
-    pz *= 1.08;
-  }
-  /* temporal lobes hang down at the outer lower sides */
-  var t =
-    Math.exp(-Math.pow((Math.abs(px) - 0.62) / 0.28, 2)) *
-    Math.exp(-Math.pow((pz - 0.05) / 0.50, 2)) *
-    Math.exp(-Math.pow((py + 0.15) / 0.55, 2));
-  py -= 0.38 * t;
-  px += side * 0.10 * t;
-  /* brainstem under the midline, back-of-center */
-  var stem = Math.exp(-Math.pow(px / 0.16, 2)) * Math.exp(-Math.pow((pz + 0.05) / 0.22, 2));
-  if (py < -0.35) {
-    py -= 0.22 * stem * Math.max(0, -0.35 - py);
-    px *= 1 - 0.45 * stem;
-  }
-  var sul = sulcus(px, py, pz);
-  var k = 1 - 0.13 * sul;
-  return new THREE.Vector3(px * k, py * (k * 0.98 + 0.02), pz * k);
-}
-
-function cerebellumPoint(rng) {
-  var u = rng() * Math.PI * 2;
-  var v = rng() * Math.PI;
-  var r = 0.32 + 0.04 * Math.sin(u * 9) * Math.sin(v * 7);
-  var x = r * Math.sin(v) * Math.cos(u);
-  var y = r * 0.7 * Math.cos(v);
-  var z = r * 0.85 * Math.sin(v) * Math.sin(u);
-  var w = 0.04 * Math.sin(u * 14) * Math.sin(v * 10);
-  return new THREE.Vector3(x * (1 - w), y * (1 - w) - 0.72, z * (1 - w) - 0.52);
-}
-
-function sampleCortex(rng) {
-  var tries = 0;
-  while (tries++ < 8) {
-    var u = rng() * 2 * Math.PI;
-    var v = Math.acos(2 * rng() - 1);
-    var p = deformBrain(Math.sin(v) * Math.cos(u), Math.cos(v), Math.sin(v) * Math.sin(u));
-    if (Math.abs(p.x) > 0.08 || rng() < 0.15) return p;
-  }
-  return deformBrain(0.2, 0.2, 0.2);
-}
-
 function nodeColor(n) {
   var et = n.etykiety || [];
   if (et.indexOf("teoria_spiskowa") >= 0) return new THREE.Color(COLOR.spisek);
@@ -153,369 +164,1235 @@ function nodeColor(n) {
   return new THREE.Color(COLOR.steel);
 }
 
-function placeNode(n) {
-  var h1 = hash01(n.id);
-  var h2 = hash01(n.id + "|b");
-  var h3 = hash01(n.id + "|c");
-  var typ = n.typ || "sprawa";
-  var u, v, p, r;
-  if (typ === "dzial") {
-    u = h1 * 2 * Math.PI;
-    v = Math.acos(2 * h2 - 1);
-    p = deformBrain(Math.sin(v) * Math.cos(u), Math.cos(v), Math.sin(v) * Math.sin(u));
-    return p.multiplyScalar(0.28 + 0.22 * h3);
-  }
-  if (typ === "decyzja") {
-    p = deformBrain((h1 - 0.5) * 0.9, 0.85 - (0.15 + h2 * 0.35) * 0.3, (h3 - 0.5) * 0.8);
-    return p;
-  }
-  if (typ === "ksiazka" || typ === "piosenka" || typ === "gra") {
-    p = deformBrain(-0.7 - h1 * 0.5, -0.35 - h2 * 0.4, (h3 - 0.4) * 0.8);
-    return p;
-  }
-  u = h1 * 2 * Math.PI;
-  v = Math.acos(2 * h2 - 1);
-  p = deformBrain(Math.sin(v) * Math.cos(u), Math.cos(v), Math.sin(v) * Math.sin(u));
-  r = typ === "sprawa" ? 0.97 : 0.90 + 0.06 * h3;
-  return p.multiplyScalar(r);
+function sulcus(x, y, z) {
+  var lon = Math.atan2(x, z);
+  var lat = Math.atan2(y, Math.sqrt(x * x + z * z));
+  var s =
+    0.55 * Math.sin(lon * 6.2 + lat * 1.4) * Math.sin(lat * 3.6 + 0.3) +
+    0.35 * Math.sin(lon * 11.0 - lat * 2.1) * Math.sin((lat + 0.2) * 7.1) +
+    0.22 * Math.sin(lon * 17.4 + lat * 8.2 + 1.1) +
+    0.12 * Math.sin(lon * 23.0 - y * 14.0);
+  var poles = Math.pow(Math.max(0, Math.cos(lat)), 1.15);
+  return Math.max(0, s) * poles;
 }
 
-function buildHemiMesh(side, low, mat) {
-  var geo = new THREE.SphereGeometry(1, low ? 28 : 48, low ? 20 : 32, side > 0 ? 0 : Math.PI, Math.PI);
-  var pos = geo.attributes.position;
-  var v = new THREE.Vector3();
-  for (var i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i).normalize();
-    /* keep this vertex in its hemisphere before deform */
-    if (v.x * side < 0) v.x = 0;
-    var p = deformBrain(v.x, v.y, v.z);
-    pos.setXYZ(i, p.x, p.y, p.z);
+function deformBrain(x, y, z) {
+  var side = x >= 0 ? 1 : -1;
+  var rx = 0.64, ry = 0.98, rz = 0.80;
+  var cX = side * (rx + 0.012);
+  var px = x * rx + cX;
+  var py = y * ry + 0.04;
+  var pz = z * rz + 0.04;
+  var fiss = Math.exp(-((x * x) / 0.0038)) * (0.55 + 0.45 * Math.max(0, 0.35 - Math.abs(y)));
+  px *= 1 - 0.22 * fiss;
+  var sul = sulcus(x, y, z);
+  var rad = 1 - 0.10 * sul;
+  if (y < -0.15 && Math.abs(z) > 0.15) {
+    var t = Math.max(0, -y - 0.15);
+    py -= t * 0.22;
+    px *= 1 + t * 0.35;
   }
-  geo.computeVertexNormals();
-  return new THREE.Mesh(geo, mat);
+  if (y < -0.55) {
+    py -= 0.12;
+    px *= 0.55;
+    pz *= 0.7;
+  }
+  return new THREE.Vector3(px * rad, py * rad, pz * rad);
 }
 
-function buildHull(low) {
-  var mat = new THREE.MeshStandardMaterial({
-    color: 0x0A1824,
-    emissive: 0x0C3A48,
-    emissiveIntensity: 0.62,
-    roughness: 0.68,
-    metalness: 0.06,
+function makeTissueMaterial(kind, uniforms) {
+  var tissue = kind === "cerebellum"
+    ? new THREE.Color(0x3A2228)
+    : kind === "brainstem"
+      ? new THREE.Color(0x2E1E20)
+      : new THREE.Color(0x3E262C);
+  var tissue2 = kind === "cerebellum"
+    ? new THREE.Color(0x6A4448)
+    : new THREE.Color(0x7A585C);
+  var mat = new THREE.ShaderMaterial({
     transparent: true,
-    opacity: 0.40,
-    side: THREE.DoubleSide,
-    depthWrite: false
-  });
-  var g = new THREE.Group();
-  g.add(buildHemiMesh(-1, low, mat));
-  g.add(buildHemiMesh(1, low, mat));
-  var cgeo = new THREE.SphereGeometry(0.34, low ? 16 : 24, low ? 12 : 18);
-  var cpos = cgeo.attributes.position;
-  var v = new THREE.Vector3();
-  for (var j = 0; j < cpos.count; j++) {
-    v.fromBufferAttribute(cpos, j).normalize();
-    var wr = 1 - 0.10 * Math.abs(Math.sin(v.x * 16) * Math.sin(v.z * 14));
-    cpos.setXYZ(j, v.x * 0.36 * wr, v.y * 0.22 * wr - 0.82, v.z * 0.30 * wr - 0.62);
-  }
-  cgeo.computeVertexNormals();
-  g.add(new THREE.Mesh(cgeo, mat.clone()));
-  return g;
-}
-
-function buildAmbientNeurons(low) {
-  var n = low ? 3200 : 8500;
-  var rng = mulberry32(0xB10E40);
-  var pos = new Float32Array(n * 3);
-  var col = new Float32Array(n * 3);
-  var ice = new THREE.Color(COLOR.ice);
-  var steel = new THREE.Color(COLOR.steel);
-  var c = new THREE.Color();
-  for (var i = 0; i < n; i++) {
-    var p = (i < n * 0.12) ? cerebellumPoint(rng) : sampleCortex(rng);
-    if (i >= n * 0.12 && rng() < 0.25) p.multiplyScalar(0.72 + rng() * 0.22);
-    pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
-    c.copy(steel).lerp(ice, rng() * 0.6);
-    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
-  }
-  var geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  neuronPos = pos;
-  neuronBase = new Float32Array(col);
-  neuronColors = col;
-  return new THREE.Points(geo, new THREE.PointsMaterial({
-    size: low ? 0.018 : 0.014,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.88,
-    blending: THREE.AdditiveBlending,
     depthWrite: false,
-    sizeAttenuation: true
-  }));
+    depthTest: true,
+    side: THREE.FrontSide,
+    uniforms: Object.assign({
+      uT: { value: 0 },
+      uTime: { value: 0 },
+      uHolo: { value: 0 },
+      uNSeeds: { value: 0 },
+      uSeed: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
+      uStart: { value: [0, 0, 0, 0, 0, 0, 0, 0] },
+      uTissue: { value: tissue },
+      uTissue2: { value: tissue2 },
+      uMold: { value: new THREE.Color(COLOR.mold) },
+      uMold2: { value: new THREE.Color(COLOR.glow) },
+      uFresnel: { value: kind === "brainstem" ? 0.55 : 0.85 },
+      uActive: { value: 0 },
+      uDim: { value: 0 }
+    }, uniforms || {}),
+    vertexShader: [
+      "varying vec3 vN;",
+      "varying vec3 vW;",
+      "varying vec3 vV;",
+      "void main(){",
+      "  vec4 w = modelMatrix * vec4(position,1.0);",
+      "  vW = w.xyz;",
+      "  vN = normalize(mat3(modelMatrix) * normal);",
+      "  vV = cameraPosition - vW;",
+      "  gl_Position = projectionMatrix * viewMatrix * w;",
+      "}"
+    ].join("\n"),
+    fragmentShader: [
+      "precision highp float;",
+      "varying vec3 vN; varying vec3 vW; varying vec3 vV;",
+      "uniform float uT, uTime, uHolo, uFresnel, uActive, uDim;",
+      "uniform int uNSeeds;",
+      "uniform vec3 uSeed[8];",
+      "uniform float uStart[8];",
+      "uniform vec3 uTissue, uTissue2, uMold, uMold2;",
+      "float infection(vec3 p){",
+      "  float m=0.0;",
+      "  for(int i=0;i<8;i++){",
+      "    if(i>=uNSeeds) break;",
+      "    float d=length(p-uSeed[i]);",
+      "    float R=max(0.0, uT-uStart[i])*2.05;",
+      "    float f=1.0-smoothstep(R*0.40, R+0.06, d);",
+      "    m=max(m,f);",
+      "  }",
+      "  return clamp(m,0.0,1.0);",
+      "}",
+      "void main(){",
+      "  vec3 n=normalize(vN);",
+      "  vec3 v=normalize(vV);",
+      "  float ndv=max(0.0, dot(n,v));",
+      "  float fres=pow(1.0-ndv, 2.35)*uFresnel;",
+      "  float wrap=clamp(dot(n, normalize(vec3(-0.35,0.85,0.45)))*0.55+0.45, 0.0, 1.0);",
+      "  float inf=infection(vW);",
+      "  vec3 tissue=mix(uTissue, uTissue2, wrap);",
+      "  tissue += vec3(0.28,0.08,0.12)*pow(wrap,2.0)*0.22;",
+      "  vec3 col=mix(tissue, mix(uMold, uMold2, wrap), smoothstep(0.0,1.0,inf));",
+      "  col += fres * mix(vec3(0.30,0.62,0.80), uMold2, inf) * 0.65;",
+      "  col += inf * uMold2 * 0.28;",
+      "  float act=uActive*(0.45+0.35*sin(uTime*3.4));",
+      "  col += vec3(0.25,0.85,1.0)*act*0.55;",
+      "  float alpha=mix(0.15, 0.52, inf) + fres*0.16;",
+      "  alpha=mix(alpha, max(alpha,0.48), act*0.6);",
+      "  alpha*=mix(1.0, 0.72, uDim*(1.0-uActive));",
+      "  if(uHolo>0.01){",
+      "    float scan=0.5+0.5*sin(vW.y*32.0 + uTime*4.5);",
+      "    col=mix(col, vec3(0.35,0.95,1.0), uHolo*(0.22+0.40*scan));",
+      "    alpha=mix(alpha, 0.50+0.28*scan, uHolo*0.75);",
+      "  }",
+      "  gl_FragColor=vec4(col, clamp(alpha,0.14,0.92));",
+      "}"
+    ].join("\n")
+  });
+  infectUniforms.push(mat.uniforms);
+  return mat;
 }
 
-function nearSurface(grid, p, radius) {
-  var gx = Math.floor((p.x + 2) * 6);
-  var gy = Math.floor((p.y + 2) * 6);
-  var gz = Math.floor((p.z + 2) * 6);
+function cloneBackMaterial(front) {
+  var mat = front.clone();
+  mat.side = THREE.BackSide;
+  mat.uniforms = front.uniforms; /* share infection / holo */
+  mat.transparent = true;
+  mat.depthWrite = true;
+  mat.depthTest = true;
+  /* slightly darker via existing wrap; alpha is in shader */
+  infectUniforms.push(mat.uniforms);
+  return mat;
+}
+
+function parseTracts(buf) {
+  var u8 = new Uint8Array(buf);
+  var dv = new DataView(buf);
+  var mag = String.fromCharCode(u8[0], u8[1], u8[2], u8[3]);
+  if (mag !== "RSSF") throw new Error("bad tracts magic");
+  var n = dv.getUint32(8, true);
+  var off = 12;
   var out = [];
-  for (var dx = -1; dx <= 1; dx++) {
-    for (var dy = -1; dy <= 1; dy++) {
-      for (var dz = -1; dz <= 1; dz++) {
-        var k = (gx + dx) + "," + (gy + dy) + "," + (gz + dz);
-        var arr = grid[k];
-        if (!arr) continue;
-        for (var i = 0; i < arr.length; i++) {
-          if (arr[i].distanceToSquared(p) < radius * radius) out.push(arr[i]);
-        }
-      }
-    }
+  var dec = new TextDecoder("ascii");
+  for (var i = 0; i < n; i++) {
+    var nl = u8[off]; off += 1;
+    var name = dec.decode(u8.subarray(off, off + nl)); off += nl;
+    var np = dv.getUint16(off, true); off += 2;
+    var bytes = np * 12;
+    var pts = new Float32Array(buf.slice(off, off + bytes));
+    off += bytes;
+    out.push({ name: name, pts: pts, n: np });
   }
   return out;
 }
 
-function buildHyphae(surface, low) {
-  var rng = mulberry32(0x10E40D);
-  var grid = {};
-  for (var i = 0; i < surface.length; i++) {
-    var p = surface[i];
-    var k = Math.floor((p.x + 2) * 6) + "," + Math.floor((p.y + 2) * 6) + "," + Math.floor((p.z + 2) * 6);
-    (grid[k] || (grid[k] = [])).push(p);
-  }
-  var seeds = [];
-  /* brainstem, both hemispheres, frontal, occipital */
-  var seedHints = [
-    new THREE.Vector3(0, -0.85, 0.05),
-    new THREE.Vector3(-0.55, 0.1, 0.4),
-    new THREE.Vector3(0.55, 0.1, 0.4),
-    new THREE.Vector3(0, 0.3, 0.7),
-    new THREE.Vector3(0, -0.1, -0.7),
-    new THREE.Vector3(-0.4, -0.5, 0.1),
-    new THREE.Vector3(0.4, -0.5, 0.1)
-  ];
-  for (var s = 0; s < seedHints.length; s++) {
-    var best = surface[0], bd = 1e9;
-    for (var j = 0; j < surface.length; j++) {
-      var d = surface[j].distanceToSquared(seedHints[s]);
-      if (d < bd) { bd = d; best = surface[j]; }
-    }
-    seeds.push(best.clone());
-  }
-  var extra = low ? 4 : 10;
-  for (var e = 0; e < extra; e++) seeds.push(surface[Math.floor(rng() * surface.length)].clone());
+function sampleFiber(f, t) {
+  var u = Math.max(0, Math.min(1, t)) * (f.n - 1);
+  var i = Math.floor(u);
+  var k = Math.min(f.n - 1, i + 1);
+  var a = u - i;
+  var p = f.pts;
+  return new THREE.Vector3(
+    p[i * 3] + (p[k * 3] - p[i * 3]) * a,
+    p[i * 3 + 1] + (p[k * 3 + 1] - p[i * 3 + 1]) * a,
+    p[i * 3 + 2] + (p[k * 3 + 2] - p[i * 3 + 2]) * a
+  );
+}
 
-  var paths = [];
-  function walk(start, dir, steps, depth) {
-    var pts = [start.clone()];
-    var cur = start.clone();
-    var d = dir.clone().normalize();
-    for (var step = 0; step < steps; step++) {
-      var cand = nearSurface(grid, cur, 0.18);
-      var bestP = null, bestScore = -1e9;
-      for (var i = 0; i < cand.length; i++) {
-        var v = cand[i].clone().sub(cur);
-        var len = v.length();
-        if (len < 0.012 || len > 0.16) continue;
-        v.multiplyScalar(1 / len);
-        var score = v.dot(d) + (rng() - 0.5) * 0.45;
-        if (score > bestScore) { bestScore = score; bestP = cand[i]; }
+function fiberTangent(f, t) {
+  var a = sampleFiber(f, Math.max(0, t - 0.02));
+  var b = sampleFiber(f, Math.min(1, t + 0.02));
+  return b.sub(a).normalize();
+}
+
+function dtiColor(dx, dy, dz, out) {
+  var l = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+  /* Standard DTI: red = L-R (x), green = A-P (z), blue = S-I (y) */
+  out.r = Math.abs(dx) / l;
+  out.g = Math.abs(dz) / l;
+  out.b = Math.abs(dy) / l;
+  var boost = 0.35;
+  out.r = out.r * (1 - boost) + boost * 0.15;
+  out.g = out.g * (1 - boost) + boost * 0.55;
+  out.b = out.b * (1 - boost) + boost * 0.85;
+  return out;
+}
+
+function buildTractLines(list, low) {
+  var pos = [];
+  var col = [];
+  var c = new THREE.Color();
+  var step = low ? 2 : 1;
+  var used = [];
+  for (var i = 0; i < list.length; i += step) {
+    var f = list[i];
+    used.push(f);
+    for (var k = 0; k < f.n - 1; k++) {
+      var ax = f.pts[k * 3], ay = f.pts[k * 3 + 1], az = f.pts[k * 3 + 2];
+      var bx = f.pts[(k + 1) * 3], by = f.pts[(k + 1) * 3 + 1], bz = f.pts[(k + 1) * 3 + 2];
+      pos.push(ax, ay, az, bx, by, bz);
+      dtiColor(bx - ax, by - ay, bz - az, c);
+      col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+    }
+  }
+  var geo = new LineSegmentsGeometry();
+  geo.setPositions(pos);
+  geo.setColors(col);
+  tractMat = new LineMaterial({
+    vertexColors: true,
+    linewidth: low ? 1.8 : 2.4,
+    transparent: true,
+    opacity: 0.92,
+    dashed: false,
+    worldUnits: false,
+    depthTest: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false
+  });
+  if (renderer) {
+    var s = new THREE.Vector2();
+    renderer.getDrawingBufferSize(s);
+    tractMat.resolution.set(s.x, s.y);
+  }
+  var lines = new LineSegments2(geo, tractMat);
+  lines.renderOrder = 2;
+  lines.frustumCulled = false;
+  return { lines: lines, used: used };
+}
+
+function buildPulses(used) {
+  var n = used.length;
+  var pos = new Float32Array(n * 3);
+  var col = new Float32Array(n * 3);
+  var c = new THREE.Color();
+  for (var i = 0; i < n; i++) {
+    var f = used[i];
+    var p = sampleFiber(f, 0);
+    pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
+    var t0 = f.pts, k = Math.min(1, f.n - 1);
+    dtiColor(t0[k * 3] - t0[0], t0[k * 3 + 1] - t0[1], t0[k * 3 + 2] - t0[2], c);
+    col[i * 3] = Math.min(1, c.r + 0.35);
+    col[i * 3 + 1] = Math.min(1, c.g + 0.35);
+    col[i * 3 + 2] = Math.min(1, c.b + 0.45);
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  var mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: { uSize: { value: state.low ? 10.0 : 13.0 } },
+    vertexShader: "attribute vec3 color; varying vec3 vC; uniform float uSize; void main(){ vC=color; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=uSize*clamp(1.6/-mv.z, 0.7, 3.2); gl_Position=projectionMatrix*mv; }",
+    fragmentShader: "varying vec3 vC; void main(){ vec2 p=gl_PointCoord*2.0-1.0; float d=dot(p,p); if(d>1.0) discard; float a=exp(-d*3.2); gl_FragColor=vec4(vC*1.35, a); }"
+  });
+  var pts = new THREE.Points(geo, mat);
+  pts.renderOrder = 3;
+  pts.frustumCulled = false;
+  pts.userData.used = used;
+  pts.userData.phase = used.map(function (f, i) { return hash01(f.name + ":" + i); });
+  pts.userData.speed = used.map(function (f, i) { return 0.18 + 0.22 * hash01(f.name + "|s|" + i); });
+  return pts;
+}
+
+
+function buildTractTubes(list, low) {
+  var sides = low ? 5 : 6;
+  var radius = low ? 0.018 : 0.016;
+  var step = low ? 2 : 1;
+  var positions = [];
+  var colors = [];
+  var prog = [];
+  var indices = [];
+  var c = new THREE.Color();
+  var vbase = 0;
+  var used = [];
+  var N = new THREE.Vector3();
+  var B = new THREE.Vector3();
+  var T = new THREE.Vector3();
+  var tmp = new THREE.Vector3();
+  for (var fi = 0; fi < list.length; fi += step) {
+    var f = list[fi];
+    if (!f || f.n < 2) continue;
+    used.push(f);
+    var n = f.n;
+    var px = f.pts;
+    T.set(px[3] - px[0], px[4] - px[1], px[5] - px[2]).normalize();
+    N.set(0, 1, 0);
+    if (Math.abs(T.y) > 0.9) N.set(1, 0, 0);
+    N.sub(tmp.copy(T).multiplyScalar(N.dot(T))).normalize();
+    for (var i = 0; i < n; i++) {
+      var i3 = i * 3;
+      var j3 = (i < n - 1 ? i + 1 : i) * 3;
+      var k3 = (i > 0 ? i - 1 : i) * 3;
+      T.set(px[j3] - px[k3], px[j3 + 1] - px[k3 + 1], px[j3 + 2] - px[k3 + 2]);
+      if (T.lengthSq() < 1e-10) T.set(0, 1, 0); else T.normalize();
+      N.sub(tmp.copy(T).multiplyScalar(N.dot(T)));
+      if (N.lengthSq() < 1e-8) {
+        N.set(0, 1, 0);
+        N.sub(tmp.copy(T).multiplyScalar(N.dot(T)));
       }
-      if (!bestP) break;
-      d.lerp(bestP.clone().sub(cur).normalize(), 0.55);
-      cur = bestP.clone();
-      pts.push(cur);
-      if (depth < (low ? 2 : 3) && rng() < 0.18 && step > 4) {
-        var nd = new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).add(d).normalize();
-        walk(cur, nd, Math.floor(steps * 0.45), depth + 1);
+      N.normalize();
+      B.crossVectors(T, N).normalize();
+      dtiColor(px[j3] - px[i3], px[j3 + 1] - px[i3 + 1], px[j3 + 2] - px[i3 + 2], c);
+      var cr = Math.min(1, c.r * 1.5 + 0.08);
+      var cg = Math.min(1, c.g * 1.5 + 0.08);
+      var cb = Math.min(1, c.b * 1.5 + 0.1);
+      var u = i / (n - 1);
+      for (var s = 0; s < sides; s++) {
+        var ang = (s / sides) * Math.PI * 2;
+        var cs = Math.cos(ang), sn = Math.sin(ang);
+        positions.push(
+          px[i3] + (N.x * cs + B.x * sn) * radius,
+          px[i3 + 1] + (N.y * cs + B.y * sn) * radius,
+          px[i3 + 2] + (N.z * cs + B.z * sn) * radius
+        );
+        colors.push(cr, cg, cb);
+        prog.push(u);
+      }
+      if (i > 0) {
+        var prev = vbase + (i - 1) * sides;
+        var cur = vbase + i * sides;
+        for (var s2 = 0; s2 < sides; s2++) {
+          var s3 = (s2 + 1) % sides;
+          indices.push(prev + s2, cur + s2, cur + s3, prev + s2, cur + s3, prev + s3);
+        }
       }
     }
-    if (pts.length > 2) paths.push(pts);
+    vbase += n * sides;
   }
-  var mainSteps = low ? 36 : 55;
-  for (var si = 0; si < seeds.length; si++) {
-    var dir0 = seeds[si].clone().normalize();
-    /* grow outward along a random tangent */
-    var tan = new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5);
-    tan.cross(dir0);
-    if (tan.lengthSq() < 1e-6) tan.set(1, 0, 0);
-    tan.normalize();
-    walk(seeds[si], tan, mainSteps, 0);
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geo.setAttribute("aT", new THREE.Float32BufferAttribute(prog, 1));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  var mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: [
+      "attribute vec3 color; attribute float aT;",
+      "varying vec3 vC; varying float vT; varying vec3 vN; varying vec3 vV;",
+      "void main(){",
+      "  vC=color; vT=aT;",
+      "  vec4 w=modelMatrix*vec4(position,1.0);",
+      "  vN=normalize(mat3(modelMatrix)*normal);",
+      "  vV=cameraPosition-w.xyz;",
+      "  gl_Position=projectionMatrix*viewMatrix*w;",
+      "}"
+    ].join("\n"),
+    fragmentShader: [
+      "precision highp float;",
+      "varying vec3 vC; varying float vT; varying vec3 vN; varying vec3 vV;",
+      "uniform float uTime;",
+      "void main(){",
+      "  float fres=pow(1.0-abs(dot(normalize(vN), normalize(vV))), 1.6);",
+      "  float pulse=exp(-40.0*abs(fract(vT - uTime*0.28)-0.02));",
+      "  vec3 col=vC*(0.55+0.55*fres) + vec3(0.85,0.95,1.0)*pulse;",
+      "  float a=0.58 + 0.42*pulse + 0.2*fres;",
+      "  gl_FragColor=vec4(col, clamp(a,0.28,1.0));",
+      "}"
+    ].join("\n")
+  });
+  var mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = 2;
+  mesh.frustumCulled = false;
+  mesh.userData.used = used;
+  mesh.userData.pulseUniform = mat.uniforms.uTime;
+  return mesh;
+}
+
+function updatePulses(t) {
+  if (!pulsePts || reduceMotion) return;
+  var used = pulsePts.userData.used;
+  var phase = pulsePts.userData.phase;
+  var speed = pulsePts.userData.speed;
+  var pos = pulsePts.geometry.getAttribute("position");
+  for (var i = 0; i < used.length; i++) {
+    var mul = 1;
+    if (activeBundles && used[i] && activeBundles[used[i].name]) mul = 2.4;
+    var u = (phase[i] + t * speed[i] * mul) % 1;
+    var p = sampleFiber(used[i], u);
+    pos.setXYZ(i, p.x, p.y, p.z);
   }
-  hyphaPaths = paths;
+  pos.needsUpdate = true;
+}
+
+function mapNodeToLobe(n, deptOf, metaMap) {
+  if (n.id === "dzial:mostek") return "cc";
+  var dept = n.typ === "dzial" ? n.id : (deptOf[n.id] || null);
+  if (dept && metaMap && metaMap[dept]) return metaMap[dept];
+  if (dept === "dzial:mostek") return "cc";
+  var typ = n.typ || "";
+  if (typ === "piosenka") return "temporal_R";
+  if (typ === "ksiazka") return "temporal_L";
+  if (typ === "gra") return "cerebellum_L";
+  if (typ === "tiktok") return "occipital_R";
+  if (typ === "long" || typ === "krotki") return "occipital_L";
+  if (typ === "decyzja") return "frontal_L";
+  return hash01(n.id) > 0.5 ? "frontal_L" : "parietal_R";
+}
+
+function fibersForLobe(lobe) {
+  var names = LOBE_BUNDLES[lobe] || LOBE_BUNDLES.frontal_L;
+  var out = [];
+  for (var i = 0; i < fibers.length; i++) {
+    if (names.indexOf(fibers[i].name) >= 0) out.push(fibers[i]);
+  }
+  return out.length ? out : fibers;
+}
+
+function placeOnTract(n, deptOf, metaMap) {
+  var lobe = mapNodeToLobe(n, deptOf, metaMap);
+  var cand = fibersForLobe(lobe);
+  var fi = Math.floor(hash01(n.id) * cand.length) % cand.length;
+  var f = cand[fi];
+  var t = 0.12 + hash01(n.id + "|t") * 0.76;
+  var p = sampleFiber(f, t);
+  var tang = fiberTangent(f, t);
+  var outward = p.clone().normalize();
+  if (outward.lengthSq() < 0.01) outward.set(0, 1, 0);
+  /* sit just off the fiber so the glow doesn't swallow the node */
+  var lift = n.typ === "dzial" ? 0.028 : 0.018;
+  var side = new THREE.Vector3();
+  side.crossVectors(tang, outward);
+  if (side.lengthSq() < 1e-6) side.crossVectors(tang, new THREE.Vector3(0, 1, 0));
+  side.normalize();
+  var sgn = hash01(n.id + "|s") > 0.5 ? 1 : -1;
+  p.addScaledVector(outward, lift);
+  p.addScaledVector(side, sgn * lift * 0.45);
+  return { pos: p, lobe: lobe, fiber: f };
+}
+
+function buildDeptOf(nodes, edges) {
+  var map = {};
+  for (var i = 0; i < nodes.length; i++) {
+    if (nodes[i].typ === "dzial") map[nodes[i].id] = nodes[i].id;
+  }
+  for (var pass = 0; pass < 5; pass++) {
+    for (var e = 0; e < edges.length; e++) {
+      var a = edges[e].from, b = edges[e].to;
+      if (map[a] && !map[b]) map[b] = map[a];
+      else if (map[b] && !map[a]) map[a] = map[b];
+    }
+  }
+  return map;
+}
+
+function attachNodes(opts) {
+  var rawNodes = (opts.nodes || []).slice();
+  var vis = state.visible;
+  if (vis) rawNodes = rawNodes.filter(function (n) { return vis[n.id]; });
+  var deptOf = buildDeptOf(opts.nodes || [], opts.edges || []);
+  var metaMap = (meta && meta.deptLobes) || {};
+  nodeIndex = [];
+  var npos = [];
+  var ncol = [];
+  var nsize = [];
+  for (var ni = 0; ni < rawNodes.length; ni++) {
+    var nd = rawNodes[ni];
+    var placed = placeOnTract(nd, deptOf, metaMap);
+    var col = nodeColor(nd);
+    var size = nd.typ === "dzial" ? 0.08 : nd.typ === "sprawa" ? 0.052 : 0.038;
+    nodeIndex.push({ node: nd, pos: placed.pos, base: col, size: size, lobe: placed.lobe });
+    npos.push(placed.pos.x, placed.pos.y, placed.pos.z);
+    ncol.push(col.r, col.g, col.b);
+    nsize.push(size);
+  }
+  nodeBase = ncol.slice();
+  nodeColors = new Float32Array(ncol);
+  nodeSizes = new Float32Array(nsize);
+  var ngeo = new THREE.BufferGeometry();
+  ngeo.setAttribute("position", new THREE.Float32BufferAttribute(npos, 3));
+  ngeo.setAttribute("color", new THREE.BufferAttribute(nodeColors, 3));
+  ngeo.setAttribute("size", new THREE.BufferAttribute(nodeSizes, 1));
+  var nmat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: {},
+    vertexShader: "attribute float size; attribute vec3 color; varying vec3 vC; void main(){ vC=color; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=size*clamp(200.0/-mv.z, 14.0, 72.0); gl_Position=projectionMatrix*mv; }",
+    fragmentShader: "varying vec3 vC; void main(){ vec2 p=gl_PointCoord*2.0-1.0; float d=dot(p,p); if(d>1.0) discard; float a=exp(-d*2.4); gl_FragColor=vec4(vC, a); }"
+  });
+  nodePts = new THREE.Points(ngeo, nmat);
+  nodePts.renderOrder = 4;
+  nodePts.frustumCulled = false;
+  brainPivot.add(nodePts);
+}
+
+function seedList() {
+  var seeds = (meta && meta.moldSeeds) || [];
+  var out = [];
+  for (var i = 0; i < seeds.length && i < 8; i++) {
+    var s = seeds[i];
+    out.push(new THREE.Vector3(s[0], s[1], s[2]));
+  }
+  if (!out.length) {
+    out = [
+      new THREE.Vector3(-0.45, 0.15, 0.55),
+      new THREE.Vector3(0.48, 0.18, 0.52),
+      new THREE.Vector3(-0.62, -0.15, 0.35),
+      new THREE.Vector3(0.60, -0.12, 0.32),
+      new THREE.Vector3(-0.2, 0.05, -0.7),
+      new THREE.Vector3(-0.15, 0.55, 0.05),
+      new THREE.Vector3(0.2, 0.52, 0.0),
+      new THREE.Vector3(0.1, -0.55, -0.2)
+    ];
+  }
+  return out;
+}
+
+function applySeedUniforms() {
+  var seeds = seedList();
+  var starts = [0.00, 0.05, 0.10, 0.14, 0.18, 0.22, 0.26, 0.30];
+  for (var i = 0; i < infectUniforms.length; i++) {
+    var u = infectUniforms[i];
+    u.uNSeeds.value = seeds.length;
+    for (var k = 0; k < 8; k++) {
+      if (u.uSeed.value[k]) {
+        if (k < seeds.length) u.uSeed.value[k].copy(seeds[k]);
+        else u.uSeed.value[k].set(0, 0, 0);
+      }
+      u.uStart.value[k] = starts[k] || 0;
+    }
+  }
+  return { seeds: seeds, starts: starts };
+}
+
+function buildHyphae(seeds) {
+  var rng = mulberry32(0xB10E01D);
+  var paths = [];
+  var surface = [];
+  if (brainPivot) {
+    brainPivot.traverse(function (o) {
+      if (!o.isMesh || !o.geometry || !o.geometry.getAttribute) return;
+      if (o.name && /back/i.test(o.name)) return;
+      var pos = o.geometry.getAttribute("position");
+      if (!pos) return;
+      var step = state.low ? 9 : 5;
+      var v = new THREE.Vector3();
+      for (var i = 0; i < pos.count; i += step) {
+        v.fromBufferAttribute(pos, i);
+        o.localToWorld(v);
+        if (brainPivot) brainPivot.worldToLocal(v);
+        surface.push(v.clone());
+      }
+    });
+  }
+  if (surface.length < 20) return [];
+  function nearest(p, excludeR, from) {
+    var best = null, bd = 1e9;
+    for (var i = 0; i < surface.length; i++) {
+      var d = p.distanceToSquared(surface[i]);
+      if (d < bd && d > excludeR * excludeR) {
+        if (from && surface[i].distanceToSquared(from) < 0.0001) continue;
+        bd = d; best = surface[i];
+      }
+    }
+    return best;
+  }
+  for (var s = 0; s < seeds.length; s++) {
+    var branches = state.low ? 5 : 8;
+    for (var b = 0; b < branches; b++) {
+      var path = [seeds[s].clone()];
+      var cur = seeds[s].clone();
+      var steps = 7 + Math.floor(rng() * 6);
+      for (var k = 0; k < steps; k++) {
+        var nxt = nearest(cur, 0.04, path[Math.max(0, path.length - 2)]);
+        if (!nxt) break;
+        var mid = cur.clone().lerp(nxt, 0.7);
+        mid.x += (rng() - 0.5) * 0.05;
+        mid.y += (rng() - 0.5) * 0.04;
+        mid.z += (rng() - 0.5) * 0.05;
+        path.push(mid);
+        cur = nxt;
+      }
+      if (path.length > 2) paths.push({ seed: s, pts: path, birth: s * 0.04 + b * 0.015 });
+    }
+  }
   return paths;
 }
 
-function hyphaGeometry(progress) {
-  var t = Math.max(0, Math.min(1, progress));
-  var positions = [];
-  var colors = [];
-  var spores = [];
-  var glow = new THREE.Color(COLOR.glow);
-  var mold = new THREE.Color(COLOR.mold2);
-  for (var p = 0; p < hyphaPaths.length; p++) {
-    var pts = hyphaPaths[p];
-    var nShow = Math.max(0, Math.floor((pts.length - 1) * t));
-    for (var i = 0; i < nShow; i++) {
-      var a = pts[i], b = pts[i + 1];
-      var u = i / Math.max(1, pts.length - 1);
-      var lit = Math.min(1, (t - u) * 3);
-      var c = mold.clone().lerp(glow, 0.4 + 0.6 * lit);
-      positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
-      colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
-      if (i % 2 === 0) {
-        spores.push((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5);
-      }
-    }
-  }
-  return {
-    linePos: new Float32Array(positions),
-    lineCol: new Float32Array(colors),
-    sporePos: new Float32Array(spores)
-  };
-}
+var hyphaPaths = [];
 
 function applyInfection(t) {
-  state.progress = Math.max(0, Math.min(1, t));
-  var p = state.progress;
-  var glow = new THREE.Color(COLOR.glow);
-  var mold = new THREE.Color(COLOR.mold);
-  /* ambient neurons pick up infection based on radius from core + hyphal proximity proxy (y/z hash) */
-  if (neuronColors && neuronPos) {
-    var n = neuronColors.length / 3;
-    for (var i = 0; i < n; i++) {
-      var x = neuronPos[i * 3], y = neuronPos[i * 3 + 1], z = neuronPos[i * 3 + 2];
-      /* front starts at brainstem (bottom) and spreads up/out */
-      var seedDist = Math.sqrt(x * x + (y + 0.7) * (y + 0.7) * 0.7 + z * z);
-      var wave = p * 2.2;
-      var inf = Math.max(0, Math.min(1, (wave - seedDist) / 0.55));
-      /* pulse */
-      if (inf > 0 && inf < 1) inf = inf * (0.75 + 0.25 * Math.sin(performance.now() * 0.004 + i * 0.17));
-      var r = neuronBase[i * 3], g = neuronBase[i * 3 + 1], b = neuronBase[i * 3 + 2];
-      neuronColors[i * 3] = r + (glow.r - r) * inf;
-      neuronColors[i * 3 + 1] = g + (glow.g - g) * inf;
-      neuronColors[i * 3 + 2] = b + (glow.b - b) * inf;
-    }
-    neuronPts.geometry.attributes.color.needsUpdate = true;
-  }
-  if (nodeColors && nodeIndex.length) {
-    for (var k = 0; k < nodeIndex.length; k++) {
-      var nd = nodeIndex[k];
-      var pos = nd.pos;
-      var seedDist2 = Math.sqrt(pos.x * pos.x + (pos.y + 0.7) * (pos.y + 0.7) * 0.7 + pos.z * pos.z);
-      var inf2 = Math.max(0, Math.min(1, (p * 2.2 - seedDist2) / 0.55));
-      var base = nd.base;
-      nodeColors[k * 3] = base.r + (glow.r - base.r) * inf2 * 0.85;
-      nodeColors[k * 3 + 1] = base.g + (glow.g - base.g) * inf2 * 0.85;
-      nodeColors[k * 3 + 2] = base.b + (glow.b - base.b) * inf2 * 0.85;
-      nodeSizes[k] = nd.size * (1 + 0.7 * inf2);
-    }
-    nodePts.geometry.attributes.color.needsUpdate = true;
-    nodePts.geometry.attributes.size.needsUpdate = true;
-  }
-  var hg = hyphaGeometry(p);
-  if (hyphaLines) {
-    hyphaLines.geometry.setAttribute("position", new THREE.BufferAttribute(hg.linePos, 3));
-    hyphaLines.geometry.setAttribute("color", new THREE.BufferAttribute(hg.lineCol, 3));
-    hyphaLines.geometry.computeBoundingSphere();
-    hyphaLines.visible = p > 0.001 && hg.linePos.length > 0;
-  }
-  if (sporePts) {
-    sporePts.geometry.setAttribute("position", new THREE.BufferAttribute(hg.sporePos, 3));
-    sporePts.geometry.computeBoundingSphere();
-    sporePts.visible = p > 0.001 && hg.sporePos.length > 0;
+  t = Math.max(0, Math.min(1, t));
+  state.progress = t;
+  for (var i = 0; i < infectUniforms.length; i++) {
+    infectUniforms[i].uT.value = t;
   }
   if (infectLight) {
-    infectLight.intensity = 1.2 + 4.5 * p;
-    infectLight.color.set(p < 0.3 ? COLOR.mold : COLOR.glow);
+    infectLight.intensity = 0.4 + t * 2.2;
+    infectLight.distance = 4 + t * 6;
   }
-  var ev = new CustomEvent("rss-brain-progress", { detail: { progress: p } });
-  window.dispatchEvent(ev);
+  /* hyphae grow with t from several foci */
+  if (hyphaLines && hyphaPaths.length) {
+    var pos = [];
+    var col = [];
+    var c1 = new THREE.Color(COLOR.mold);
+    var c2 = new THREE.Color(COLOR.glow);
+    var spores = [];
+    var starts = [0.00, 0.05, 0.10, 0.14, 0.18, 0.22, 0.26, 0.30];
+    for (var h = 0; h < hyphaPaths.length; h++) {
+      var path = hyphaPaths[h];
+      var local = (t - path.birth) / 0.55;
+      if (local <= 0) continue;
+      local = Math.min(1, local);
+      var nshow = Math.max(2, Math.floor(local * (path.pts.length - 1)));
+      for (var k = 0; k < nshow - 1; k++) {
+        var a = path.pts[k], b = path.pts[k + 1];
+        pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        var u = k / Math.max(1, nshow);
+        col.push(
+          c1.r + (c2.r - c1.r) * u, c1.g + (c2.g - c1.g) * u, c1.b + (c2.b - c1.b) * u,
+          c1.r + (c2.r - c1.r) * u, c1.g + (c2.g - c1.g) * u, c1.b + (c2.b - c1.b) * u
+        );
+      }
+    }
+    var seeds = seedList();
+    for (var s = 0; s < seeds.length; s++) {
+      if (t > (starts[s] || 0)) {
+        var sp = seeds[s];
+        spores.push(sp.x, sp.y, sp.z);
+      }
+    }
+    hyphaLines.geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    hyphaLines.geometry.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    hyphaLines.geometry.computeBoundingSphere();
+    hyphaLines.visible = pos.length > 0;
+    if (sporePts) {
+      sporePts.geometry.setAttribute("position", new THREE.Float32BufferAttribute(spores, 3));
+      sporePts.geometry.computeBoundingSphere();
+      sporePts.visible = spores.length > 0;
+    }
+  }
+  if (nodePts && nodeIndex.length) {
+    var seeds = seedList();
+    var starts = [0.00, 0.05, 0.10, 0.14, 0.18, 0.22, 0.26, 0.30];
+    var attr = nodePts.geometry.getAttribute("color");
+    for (var n = 0; n < nodeIndex.length; n++) {
+      var p = nodeIndex[n].pos;
+      var inf = 0;
+      for (var s = 0; s < seeds.length; s++) {
+        var R = Math.max(0, t - starts[s]) * 2.05;
+        var d = p.distanceTo(seeds[s]);
+        var f = 1 - smoothstep(R * 0.4, R + 0.06, d);
+        if (f > inf) inf = f;
+      }
+      var b = nodeIndex[n].base;
+      var mold = new THREE.Color(COLOR.glow);
+      attr.setXYZ(n, b.r + (mold.r - b.r) * inf, b.g + (mold.g - b.g) * inf, b.b + (mold.b - b.b) * inf);
+    }
+    attr.needsUpdate = true;
+  }
+  var pct = Math.round(t * 100);
+  if (state._hudPct !== pct) {
+    state._hudPct = pct;
+    updateHud();
+  }
+  try {
+    window.dispatchEvent(new CustomEvent("rss-brain-progress", { detail: { progress: t } }));
+  } catch (e) {}
 }
 
-function setHint(text, visible) {
-  if (!state.hint) return;
-  if (!visible || !text) {
-    state.hint.hidden = true;
+function smoothstep(e0, e1, x) {
+  var u = Math.max(0, Math.min(1, (x - e0) / (e1 - e0 || 1)));
+  return u * u * (3 - 2 * u);
+}
+
+function matGrey() {
+  return new THREE.MeshStandardMaterial({
+    color: 0xA7B0B8,
+    roughness: 0.48,
+    metalness: 0.08,
+    emissive: 0x0A1218,
+    emissiveIntensity: 0.15
+  });
+}
+
+function makeGreyAlien(rng) {
+  var g = new THREE.Group();
+  var mat = matGrey();
+  var eye = new THREE.MeshStandardMaterial({
+    color: 0x05070B,
+    roughness: 0.22,
+    metalness: 0.15,
+    emissive: 0x143044,
+    emissiveIntensity: 0.55
+  });
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 18, 14), mat);
+  head.scale.set(0.88, 1.22, 1.02);
+  head.position.y = 1.12;
+  g.add(head);
+  var jaw = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), mat);
+  jaw.scale.set(0.85, 0.7, 0.9);
+  jaw.position.set(0, 0.98, 0.04);
+  g.add(jaw);
+  function addEye(sx) {
+    var e = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), eye);
+    e.scale.set(1.15, 0.7, 0.55);
+    e.position.set(sx * 0.09, 1.10, 0.16);
+    e.rotation.y = sx * 0.35;
+    g.add(e);
+  }
+  addEye(-1); addEye(1);
+  var neck = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.16, 8), mat);
+  neck.position.y = 0.90;
+  g.add(neck);
+  var torso = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), mat);
+  torso.scale.set(0.72, 1.15, 0.55);
+  torso.position.y = 0.62;
+  g.add(torso);
+  var pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), mat);
+  pelvis.scale.set(0.85, 0.7, 0.6);
+  pelvis.position.y = 0.38;
+  g.add(pelvis);
+  function limb(len, r, pos, rot) {
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.7, r, len, 7), mat);
+    m.position.copy(pos);
+    m.rotation.set(rot.x, rot.y, rot.z);
+    g.add(m);
+    return m;
+  }
+  limb(0.42, 0.035, new THREE.Vector3(-0.16, 0.62, 0.02), new THREE.Vector3(0, 0, 0.55));
+  limb(0.42, 0.035, new THREE.Vector3(0.16, 0.62, 0.02), new THREE.Vector3(0, 0, -0.55));
+  limb(0.38, 0.04, new THREE.Vector3(-0.07, 0.18, 0.02), new THREE.Vector3(0.12, 0, 0.08));
+  limb(0.38, 0.04, new THREE.Vector3(0.07, 0.18, 0.02), new THREE.Vector3(0.12, 0, -0.08));
+  g.scale.setScalar(0.95 + rng() * 0.12);
+  return g;
+}
+
+function makeHuman() {
+  var g = new THREE.Group();
+  var cloth = new THREE.MeshStandardMaterial({ color: 0x1A2230, roughness: 0.7, metalness: 0.1 });
+  var skin = new THREE.MeshStandardMaterial({ color: 0xC4A48A, roughness: 0.65, metalness: 0.02 });
+  var torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.42, 6, 10), cloth);
+  torso.rotation.z = Math.PI / 2;
+  torso.position.set(0, 0.02, 0.02);
+  g.add(torso);
+  var hips = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), cloth);
+  hips.scale.set(1.1, 0.7, 0.85);
+  hips.position.set(0.28, 0.0, 0.02);
+  g.add(hips);
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), skin);
+  head.position.set(-0.46, 0.05, 0.0);
+  g.add(head);
+  var neck = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.045, 0.08, 8), skin);
+  neck.rotation.z = Math.PI / 2;
+  neck.position.set(-0.36, 0.04, 0);
+  g.add(neck);
+  function leg(z) {
+    var l = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.38, 4, 8), cloth);
+    l.rotation.z = Math.PI / 2;
+    l.position.set(0.58, 0.0, z);
+    g.add(l);
+  }
+  leg(-0.08); leg(0.08);
+  function arm(z, y) {
+    var a = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.32, 4, 8), cloth);
+    a.rotation.z = Math.PI / 2;
+    a.position.set(0.02, y, z);
+    g.add(a);
+  }
+  arm(-0.20, 0.02); arm(0.20, 0.02);
+  return g;
+}
+
+function buildExamScene() {
+  var g = new THREE.Group();
+  g.visible = false;
+  var tableMat = new THREE.MeshStandardMaterial({
+    color: 0x2A3340, metalness: 0.65, roughness: 0.28,
+    emissive: 0x0A1820, emissiveIntensity: 0.2
+  });
+  var table = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 1.05), tableMat);
+  table.position.set(0, -1.22, 0);
+  g.add(table);
+  var edge = new THREE.Mesh(new THREE.BoxGeometry(2.64, 0.03, 1.09), new THREE.MeshStandardMaterial({
+    color: 0x5CE6F2, emissive: 0x1E7F94, emissiveIntensity: 0.55, metalness: 0.4, roughness: 0.3
+  }));
+  edge.position.set(0, -1.17, 0);
+  g.add(edge);
+  var legMat = tableMat;
+  [[-1.15, -1.6, -0.42], [1.15, -1.6, -0.42], [-1.15, -1.6, 0.42], [1.15, -1.6, 0.42]].forEach(function (p) {
+    var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.72, 8), legMat);
+    leg.position.set(p[0], p[1], p[2]);
+    g.add(leg);
+  });
+  var floor = new THREE.GridHelper(7, 28, 0x163040, 0x0C1824);
+  floor.position.y = -1.96;
+  g.add(floor);
+  var human = makeHuman();
+  human.position.set(0.1, -1.08, 0);
+  g.add(human);
+  function yawTo(obj, x, z) {
+    obj.rotation.set(0, Math.atan2(x - obj.position.x, z - obj.position.z), 0);
+  }
+  var rng = mulberry32(0xA11E4);
+  var a1 = makeGreyAlien(rng);
+  a1.position.set(-1.35, -1.96, 0.70);
+  a1.scale.setScalar(1.15);
+  yawTo(a1, 0, 0);
+  g.add(a1);
+  var a2 = makeGreyAlien(rng);
+  a2.position.set(1.40, -1.96, 0.70);
+  a2.scale.setScalar(1.18);
+  yawTo(a2, 0, 0);
+  g.add(a2);
+  var a3 = makeGreyAlien(rng);
+  a3.position.set(0.15, -1.96, -1.35);
+  a3.scale.setScalar(1.12);
+  yawTo(a3, 0, 0);
+  g.add(a3);
+  /* overhead lamp */
+  var lamp = new THREE.SpotLight(0xBFF6FA, 2.2, 8, 0.55, 0.4, 1.2);
+  lamp.position.set(0.2, 2.2, 0.8);
+  lamp.target.position.set(0, -0.2, 0);
+  g.add(lamp);
+  g.add(lamp.target);
+  var lampFill = new THREE.PointLight(0x1E7F94, 1.1, 6, 1.4);
+  lampFill.position.set(-1.2, 0.8, 1.0);
+  g.add(lampFill);
+  return g;
+}
+
+function buildCalipers() {
+  var g = new THREE.Group();
+  var mat = new THREE.LineBasicMaterial({
+    color: 0x5CE6F2, transparent: true, opacity: 0.28, depthWrite: false
+  });
+  var pts = [];
+  function tickLine(a, b) { pts.push(a.x, a.y, a.z, b.x, b.y, b.z); }
+  var x0 = -1.15, x1 = 1.15, y0 = -0.85, y1 = 0.75, z0 = -0.95, z1 = 0.95;
+  /* frame around the brain */
+  tickLine(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y0, z0));
+  tickLine(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x0, y1, z0));
+  tickLine(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x0, y0, z1));
+  tickLine(new THREE.Vector3(x1, y1, z1), new THREE.Vector3(x0, y1, z1));
+  tickLine(new THREE.Vector3(x1, y1, z1), new THREE.Vector3(x1, y0, z1));
+  tickLine(new THREE.Vector3(x1, y1, z1), new THREE.Vector3(x1, y1, z0));
+  var step = 0.2;
+  for (var x = x0; x <= x1 + 0.001; x += step) {
+    tickLine(new THREE.Vector3(x, y0, z0), new THREE.Vector3(x, y0 - 0.04, z0));
+  }
+  for (var y = y0; y <= y1 + 0.001; y += step) {
+    tickLine(new THREE.Vector3(x0, y, z0), new THREE.Vector3(x0 - 0.04, y, z0));
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+  var lines = new THREE.LineSegments(geo, mat);
+  lines.renderOrder = 6;
+  g.add(lines);
+  return g;
+}
+
+function buildScanRing() {
+  var geo = new THREE.TorusGeometry(0.95, 0.008, 8, 64);
+  var mat = new THREE.MeshBasicMaterial({
+    color: 0x5CE6F2, transparent: true, opacity: 0.0, depthWrite: false
+  });
+  var m = new THREE.Mesh(geo, mat);
+  m.rotation.x = Math.PI / 2;
+  m.visible = false;
+  m.renderOrder = 7;
+  return m;
+}
+
+function setSceneMode(mode) {
+  if (mode !== "exam") mode = "mold";
+  state.sceneMode = mode;
+  if (!state.mounted) { pendingMode = mode; return; }
+  var exam = mode === "exam";
+  if (examGroup) examGroup.visible = exam;
+  if (scanRing) scanRing.visible = exam;
+  for (var i = 0; i < infectUniforms.length; i++) {
+    infectUniforms[i].uHolo.value = exam ? 1.0 : 0.0;
+  }
+  if (brainPivot) {
+    if (exam) {
+      brainPivot.position.set(0, 0.22, 0);
+      brainPivot.scale.setScalar(0.92);
+    } else {
+      brainPivot.position.set(0, 0, 0);
+      brainPivot.scale.setScalar(1);
+    }
+  }
+  if (calipers) calipers.visible = true;
+  if (scene) {
+    scene.fog = exam
+      ? new THREE.FogExp2(0x03050A, 0.08)
+      : new THREE.FogExp2(COLOR.void, 0.08);
+    scene.background = new THREE.Color(exam ? 0x03050A : COLOR.void);
+  }
+  if (controls) {
+    controls.autoRotate = !reduceMotion && !exam;
+    fit();
+  }
+  if (hud) {
+    var tag = hud.querySelector(".hud-mode");
+    if (tag) tag.textContent = exam ? "TRYB // BADANIE KOSMITÓW" : "TRYB // PLEŚŃ · DTI";
+  }
+}
+
+function applyHoloTime(t) {
+  for (var i = 0; i < infectUniforms.length; i++) {
+    infectUniforms[i].uTime.value = t;
+  }
+  if (tractTubes && tractTubes.userData.pulseUniform) tractTubes.userData.pulseUniform.value = t;
+  if (scanRing && state.sceneMode === "exam") {
+    scanRing.visible = true;
+    scanRing.position.y = Math.sin(t * 0.9) * 0.45;
+    scanRing.material.opacity = 0.45;
+    scanRing.rotation.z = t * 0.15;
+  }
+}
+
+function buildHud(el) {
+  var wrap = document.createElement("div");
+  wrap.className = "brain-hud";
+  wrap.innerHTML =
+    '<div class="hud-scan"></div>' +
+    '<div class="hud-col hud-left">' +
+      '<div class="hud-brand">RSS // NEURO-SCAN</div>' +
+      '<div class="hud-mode">TRYB // PLEŚŃ · DTI</div>' +
+      '<canvas class="hud-eeg" width="280" height="64" aria-hidden="true"></canvas>' +
+      '<div class="hud-counts" id="brainCounts"></div>' +
+      '<div class="hud-infect">INFEKCJA <b id="brainInfectHud">0%</b></div>' +
+    "</div>" +
+    '<div class="hud-col hud-right">' +
+      '<div class="hud-right-title">AKTYWNOŚĆ DZIAŁÓW</div>' +
+      '<div class="hud-depts" id="brainDepts"></div>' +
+    "</div>";
+  el.appendChild(wrap);
+  hud = wrap;
+  eegCanvas = wrap.querySelector(".hud-eeg");
+  eegCtx = eegCanvas ? eegCanvas.getContext("2d") : null;
+  labelLayer = document.createElement("div");
+  labelLayer.className = "brain-labels";
+  el.appendChild(labelLayer);
+}
+
+function countLabels(nodes) {
+  var c = { fakt: 0, dokument_zrodlowy: 0, teoria: 0, teoria_spiskowa: 0, brak: 0 };
+  for (var i = 0; i < nodes.length; i++) {
+    var et = nodes[i].etykiety || [];
+    var hit = false;
+    if (et.indexOf("fakt") >= 0) { c.fakt++; hit = true; }
+    if (et.indexOf("dokument_zrodlowy") >= 0) { c.dokument_zrodlowy++; hit = true; }
+    if (et.indexOf("teoria") >= 0) { c.teoria++; hit = true; }
+    if (et.indexOf("teoria_spiskowa") >= 0) { c.teoria_spiskowa++; hit = true; }
+    if (nodes[i].brak_zrodla && nodes[i].typ === "sprawa" && !hit) c.brak++;
+  }
+  return c;
+}
+
+function updateHud() {
+  if (!hud) return;
+  var inf = hud.querySelector("#brainInfectHud");
+  if (inf) inf.textContent = Math.round(state.progress * 100) + "%";
+  var countsEl = hud.querySelector("#brainCounts");
+  if (countsEl) {
+    var nodes = nodeIndex.map(function (x) { return x.node; });
+    var c = countLabels(nodes);
+    countsEl.innerHTML =
+      '<span class="c fakt">FAKT <b>' + c.fakt + "</b></span>" +
+      '<span class="c dok">DOKUMENT <b>' + c.dokument_zrodlowy + "</b></span>" +
+      '<span class="c teo">TEORIA <b>' + c.teoria + "</b></span>" +
+      '<span class="c spi">SPISKOWA <b>' + c.teoria_spiskowa + "</b></span>";
+  }
+  var de = hud.querySelector("#brainDepts");
+  if (de && meta && meta.deptLabels) {
+    var byLobe = {};
+    for (var i = 0; i < nodeIndex.length; i++) {
+      var L = nodeIndex[i].lobe || "";
+      byLobe[L] = (byLobe[L] || 0) + 1;
+    }
+    var keys = ["frontal_L", "frontal_R", "parietal_L", "parietal_R", "temporal_L", "temporal_R", "occipital_L", "occipital_R", "cerebellum_L", "cerebellum_R", "brainstem", "cc"];
+    var html = "";
+    for (var k = 0; k < keys.length; k++) {
+      var key = keys[k];
+      var labs = (meta.deptLabels[key] || []).join(" · ");
+      if (!labs && key === "cc") labs = "Mostek";
+      if (!labs) continue;
+      var n = byLobe[key] || 0;
+      var title = (meta.lobes && meta.lobes[key] && meta.lobes[key].label) || key;
+      var pct = Math.min(100, 18 + n * 8 + state.progress * 30);
+      html += '<div class="dept-row" title="' + title + '"><span class="dn">' + labs + '</span><span class="db"><i style="width:' + pct + '%"></i></span></div>';
+    }
+    de.innerHTML = html;
+  }
+}
+
+function drawEeg(t) {
+  if (!eegCtx || !eegCanvas) return;
+  var w = eegCanvas.width, h = eegCanvas.height;
+  eegCtx.clearRect(0, 0, w, h);
+  var channels = 3;
+  var amp = 8 + state.progress * 10;
+  for (var c = 0; c < channels; c++) {
+    eegCtx.beginPath();
+    eegCtx.strokeStyle = c === 0 ? "rgba(92,230,242,.85)" : c === 1 ? "rgba(61,220,132,.7)" : "rgba(245,230,163,.7)";
+    eegCtx.lineWidth = 1.2;
+    var y0 = 12 + c * 18;
+    for (var x = 0; x < w; x++) {
+      var u = x / w;
+      var y = y0 + Math.sin(u * 22 + t * (2.2 + c * 0.4) + c) * amp * 0.35
+        + Math.sin(u * 54 + t * 5.5 + c * 2) * amp * 0.12
+        + (Math.sin(u * 9 + t * 0.7 + c) > 0.92 ? amp * 0.55 * Math.sin(u * 80) : 0);
+      if (x === 0) eegCtx.moveTo(x, y); else eegCtx.lineTo(x, y);
+    }
+    eegCtx.stroke();
+  }
+}
+
+function buildLabels() {
+  if (!labelLayer || !meta || !meta.lobes) return;
+  labelLayer.innerHTML = "";
+  labelEls = [];
+  var keys = Object.keys(meta.lobes);
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    if (key === "cc") continue; /* Mostek already on frontal / dedicated */
+    var info = meta.lobes[key];
+    var div = document.createElement("div");
+    div.className = "brain-label";
+    var depts = (meta.deptLabels && meta.deptLabels[key]) ? meta.deptLabels[key].join(" · ") : "";
+    div.innerHTML = "<em>" + (info.label || key) + "</em>" + (depts ? "<span>" + depts + "</span>" : "");
+    labelLayer.appendChild(div);
+    var p = info.labelPos || info.center || [0, 0, 0];
+    labelEls.push({ el: div, pos: new THREE.Vector3(p[0], p[1], p[2]), key: key });
+  }
+  /* Mostek on the commissure */
+  if (meta.lobes.cc) {
+    var div2 = document.createElement("div");
+    div2.className = "brain-label brain-label-core";
+    div2.innerHTML = "<em>Spoidło wielkie</em><span>Mostek</span>";
+    labelLayer.appendChild(div2);
+    var p2 = meta.lobes.cc.labelPos || [0, 0.42, 0.12];
+    labelEls.push({ el: div2, pos: new THREE.Vector3(p2[0], p2[1], p2[2]), key: "cc" });
+  }
+}
+
+function projectLabels() {
+  if (!camera || !labelEls.length || !container) return;
+  var w = container.clientWidth, h = container.clientHeight;
+  var v = new THREE.Vector3();
+  var camDir = new THREE.Vector3();
+  camera.getWorldDirection(camDir);
+  for (var i = 0; i < labelEls.length; i++) {
+    var item = labelEls[i];
+    v.copy(item.pos);
+    if (brainPivot) brainPivot.localToWorld(v);
+    var to = v.clone().sub(camera.position);
+    var behind = to.dot(camDir) < 0;
+    v.project(camera);
+    var x = (v.x * 0.5 + 0.5) * w;
+    var y = (-v.y * 0.5 + 0.5) * h;
+    var vis = !behind && v.z < 1 && x > -40 && x < w + 40 && y > 8 && y < h - 8;
+    item.el.style.transform = "translate(" + x + "px," + y + "px)";
+    item.el.style.opacity = vis ? (state.low ? "0.85" : "0.95") : "0";
+  }
+}
+
+
+function viewpointFor(key) {
+  if (!key || key === "overview") {
+    return { pos: new THREE.Vector3(1.85, 1.15, 2.15), target: new THREE.Vector3(0, 0.02, 0) };
+  }
+  var info = meta && meta.lobes && meta.lobes[key];
+  var c = info && info.center
+    ? new THREE.Vector3(info.center[0], info.center[1], info.center[2])
+    : new THREE.Vector3();
+  var out = c.clone();
+  if (out.lengthSq() < 1e-4) out.set(0.25, 0.45, 1);
+  out.normalize();
+  /* Stay far enough that the whole brain stays in frame; only bias toward the lobe. */
+  var pos = new THREE.Vector3().copy(out).multiplyScalar(2.25)
+    .add(new THREE.Vector3(0.15, 0.75, 0.35))
+    .addScaledVector(c, 0.35);
+  if (pos.length() < 2.45) pos.setLength(2.5);
+  var target = c.clone().multiplyScalar(0.42);
+  if (key === "cc") {
+    pos.set(1.15, 1.35, 2.05);
+    target.set(0, 0.12, 0.08);
+  }
+  if (key === "brainstem") {
+    pos.set(1.7, 0.35, 2.0);
+    target.set(0, -0.35, 0.04);
+  }
+  return { pos: pos, target: target };
+}
+
+function setHighlight(key) {
+  state.focusKey = key || "overview";
+  var names = LOBE_BUNDLES[key] || null;
+  activeBundles = null;
+  if (names) {
+    activeBundles = {};
+    for (var i = 0; i < names.length; i++) activeBundles[names[i]] = 1;
+  }
+  var overview = !key || key === "overview";
+  Object.keys(lobeMeshes).forEach(function (name) {
+    var mesh = lobeMeshes[name];
+    var u = mesh && mesh.material && mesh.material.uniforms;
+    if (!u || u.uActive == null) return;
+    var on = !overview && (name === key || (key === "cc" && name.indexOf("frontal") >= 0));
+    /* cc is a virtual target — glow both medial fronts slightly, or nothing specific */
+    if (key === "cc") on = (name.indexOf("frontal") >= 0);
+    u.uActive.value = on ? 1 : 0;
+    u.uDim.value = overview ? 0 : (on ? 0 : 0.32);
+  });
+}
+
+function focusLobe(key, opts) {
+  opts = opts || {};
+  key = key || "overview";
+  state.focusKey = key;
+  if (!camera || !controls) {
+    pendingShell = pendingShell || { tab: state.shellTab };
     return;
   }
-  state.hint.hidden = false;
-  state.hint.textContent = text;
-}
-
-function pickNode(ev) {
-  if (!renderer || !nodePts) return null;
-  var rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  /* raycast points: threshold in world units */
-  raycaster.params.Points = { threshold: state.low ? 0.06 : 0.045 };
-  var hits = raycaster.intersectObject(nodePts, false);
-  if (!hits.length) return null;
-  var idx = hits[0].index;
-  return nodeIndex[idx] || null;
-}
-
-function onPointerDown(ev) {
-  pointerDown = { x: ev.clientX, y: ev.clientY };
-  pointerMoved = 0;
-}
-
-function onPointerMove(ev) {
-  if (pointerDown) {
-    var dx = ev.clientX - pointerDown.x, dy = ev.clientY - pointerDown.y;
-    pointerMoved = Math.max(pointerMoved, Math.hypot(dx, dy));
+  var vp = viewpointFor(key);
+  if (reduceMotion || opts.instant) {
+    camera.position.copy(vp.pos);
+    controls.target.copy(vp.target);
+    controls.update();
+    camFly = null;
+    return;
   }
-  var hit = pickNode(ev);
-  lastHover = hit;
-  if (hit && hit.node) {
-    var n = hit.node;
-    setHint(n.nazwa || n.id, true);
-    renderer.domElement.style.cursor = "pointer";
-  } else {
-    setHint("", false);
-    renderer.domElement.style.cursor = "grab";
-  }
+  camFly = {
+    p0: camera.position.clone(),
+    p1: vp.pos,
+    t0: controls.target.clone(),
+    t1: vp.target,
+    start: performance.now(),
+    dur: opts.duration != null ? opts.duration : 900
+  };
+  controls.autoRotate = false;
 }
 
-function onPointerUp(ev) {
-  if (pointerMoved < 8) {
-    var hit = pickNode(ev);
-    if (hit && hit.node && typeof state.onOpen === "function") state.onOpen(hit.node);
-  }
-  pointerDown = null;
-}
-
-function tick() {
-  raf = requestAnimationFrame(tick);
-  if (!renderer) return;
-  var dt = clock.getDelta();
-  if (state.playing) {
-    var u = (performance.now() - state.playT0) / state.playDur;
-    if (u >= 1) {
-      applyInfection(1);
-      if (state.loop) {
-        state.playT0 = performance.now();
-        applyInfection(0);
-      } else {
-        state.playing = false;
-        window.dispatchEvent(new CustomEvent("rss-brain-play-end"));
-      }
-    } else {
-      var eased = u * u * (3 - 2 * u);
-      applyInfection(eased);
+function tickCam() {
+  if (!camFly || !camera || !controls) return;
+  var u = (performance.now() - camFly.start) / (camFly.dur || 900);
+  if (u >= 1) {
+    camera.position.copy(camFly.p1);
+    controls.target.copy(camFly.t1);
+    camFly = null;
+    if (!reduceMotion && (state.shellTab === "bibl" || state.focusKey === "overview")) {
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.35;
     }
-  } else if (state.progress > 0 && state.progress < 1) {
-    /* gentle pulse on a static mid-infection frame */
-    applyInfection(state.progress);
+    controls.update();
+    return;
   }
-  if (controls) controls.update(dt);
-  if (group && !reduceMotion) {
-    /* very slow independent drift if auto-rotate is off? leave to OrbitControls */
-  }
-  renderer.render(scene, camera);
+  u = u * u * (3 - 2 * u);
+  camera.position.lerpVectors(camFly.p0, camFly.p1, u);
+  controls.target.lerpVectors(camFly.t0, camFly.t1, u);
 }
+
+function applyLabelFilter() {
+  if (!labelEls.length) return;
+  var key = state.focusKey;
+  var showAll = state.libMode || key === "overview";
+  for (var i = 0; i < labelEls.length; i++) {
+    var el = labelEls[i].el;
+    var on = showAll;
+    if (!on && key) {
+      var txt = (el.textContent || "") + (el.innerHTML || "");
+      /* labelEls don't store key; match by known label text from meta */
+    }
+    /* store key on item if present */
+    if (labelEls[i].key) on = showAll || labelEls[i].key === key || (key === "cc" && labelEls[i].key === "cc");
+    el.classList.toggle("is-quiet", !showAll && !on);
+    el.classList.toggle("is-focus", !showAll && !!on);
+  }
+}
+
+function setLibraryMode(on) {
+  state.libMode = !!on;
+  if (hud) hud.classList.toggle("brain-hud-mini", !state.libMode);
+  applyLabelFilter();
+}
+
+function setShellMode(tab, opts) {
+  opts = opts || {};
+  tab = tab || "biuro";
+  state.shellTab = tab;
+  var key = TAB_LOBE[tab] || "overview";
+  if (!state.mounted || !state.ready) {
+    pendingShell = { tab: tab, opts: opts };
+    return;
+  }
+  if (tab !== "bibl" && state.sceneMode === "exam") setSceneMode("mold");
+  setLibraryMode(tab === "bibl");
+  setHighlight(key);
+  focusLobe(key, opts);
+  applyLabelFilter();
+}
+
+function setGraph(opts) {
+  opts = opts || {};
+  if (!brainPivot) return;
+  state.onOpen = opts.onOpen || state.onOpen;
+  state.visible = opts.visible || null;
+  if (opts.nodes || opts.edges) {
+    if (nodePts && nodePts.parent) nodePts.parent.remove(nodePts);
+    if (nodePts && nodePts.geometry) nodePts.geometry.dispose();
+    attachNodes({ nodes: opts.nodes || [], edges: opts.edges || [], visible: state.visible, onOpen: state.onOpen });
+  } else if (opts.visible && nodePts) {
+    /* filter in place if only visibility changed — rebuild is safer */
+    if (nodePts.parent) nodePts.parent.remove(nodePts);
+    if (nodePts.geometry) nodePts.geometry.dispose();
+    attachNodes({ nodes: (opts.nodes || []), edges: opts.edges || [], visible: opts.visible, onOpen: state.onOpen });
+  }
+}
+
+function setOnNavigate(fn) { state.onNavigate = fn || null; }
 
 function qualityLow() {
   var w = window.innerWidth || 1100;
@@ -535,8 +1412,17 @@ function canWebGL() {
 
 function fit() {
   if (!controls || !camera) return;
-  camera.position.set(2.05, 1.05, 2.35);
-  controls.target.set(0, -0.12, 0);
+  if (state.sceneMode === "exam") {
+    camera.position.set(2.05, 0.95, 2.55);
+    controls.target.set(0, -0.45, 0);
+    controls.minDistance = 1.5;
+    controls.maxDistance = 8.5;
+  } else {
+    camera.position.set(1.85, 1.15, 2.15);
+    controls.target.set(0, 0.02, 0);
+    controls.minDistance = 1.2;
+    controls.maxDistance = 6.5;
+  }
   controls.update();
 }
 
@@ -547,10 +1433,119 @@ function resize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h, true);
+  if (tractMat && renderer) {
+    var s = new THREE.Vector2();
+    renderer.getDrawingBufferSize(s);
+    tractMat.resolution.set(s.x, s.y);
+  }
+}
+
+function pickNode(ev) {
+  if (!renderer || !camera || !nodePts || !nodeIndex.length) return null;
+  var rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  /* points threshold in pixels */
+  raycaster.params.Points = raycaster.params.Points || {};
+  raycaster.params.Points.threshold = 0.07;
+  var hits = raycaster.intersectObject(nodePts, false);
+  if (hits && hits.length) {
+    var idx = hits[0].index;
+    if (idx != null && nodeIndex[idx]) return nodeIndex[idx];
+  }
+  /* fallback: nearest in screen space */
+  var best = null, bd = 28 * 28;
+  var v = new THREE.Vector3();
+  var w = rect.width, h = rect.height;
+  var mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  for (var i = 0; i < nodeIndex.length; i++) {
+    v.copy(nodeIndex[i].pos);
+    if (brainPivot) brainPivot.localToWorld(v);
+    v.project(camera);
+    if (v.z > 1) continue;
+    var dx = (v.x * 0.5 + 0.5) * w - mx;
+    var dy = (-v.y * 0.5 + 0.5) * h - my;
+    var d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = nodeIndex[i]; }
+  }
+  return best;
+}
+
+function onPointerDown(ev) {
+  pointerDown = { x: ev.clientX, y: ev.clientY };
+  pointerMoved = false;
+}
+
+function onPointerMove(ev) {
+  if (pointerDown) {
+    var dx = ev.clientX - pointerDown.x, dy = ev.clientY - pointerDown.y;
+    if (dx * dx + dy * dy > 16) pointerMoved = true;
+  }
+  var hit = pickNode(ev);
+  var lobe = hit ? null : pickLobe(ev);
+  var key = hit ? ("n:" + hit.node.id) : (lobe ? ("l:" + lobe) : "");
+  if (key !== lastHover) {
+    lastHover = key;
+    if (state.hint) {
+      if (hit && hit.node) {
+        state.hint.textContent = hit.node.nazwa || hit.node.id;
+        state.hint.hidden = false;
+      } else if (lobe) {
+        var tab = LOBE_TAB[lobe];
+        var lab = (meta && meta.lobes && meta.lobes[lobe] && meta.lobes[lobe].label) || lobe;
+        state.hint.textContent = tab ? (lab + " → " + (TAB_LABEL[tab] || tab)) : lab;
+        state.hint.hidden = false;
+      } else {
+        state.hint.hidden = true;
+      }
+    }
+    if (renderer) renderer.domElement.style.cursor = (hit || lobe) ? "pointer" : "grab";
+  }
+}
+
+function pickLobe(ev) {
+  if (!renderer || !camera) return null;
+  var list = [];
+  Object.keys(lobeMeshes).forEach(function (k) {
+    if (lobeMeshes[k]) list.push(lobeMeshes[k]);
+  });
+  if (!list.length) return null;
+  var rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  var hits = raycaster.intersectObjects(list, false);
+  if (hits && hits.length && hits[0].object && hits[0].object.name) return hits[0].object.name;
+  return null;
+}
+
+function onPointerUp(ev) {
+  if (pointerDown && !pointerMoved) {
+    var hit = pickNode(ev);
+    if (hit && hit.node && state.onOpen) state.onOpen(hit.node);
+    else if (state.onNavigate) {
+      var lobe = pickLobe(ev);
+      if (lobe) state.onNavigate(lobe, LOBE_TAB[lobe] || null);
+    }
+  }
+  pointerDown = null;
+}
+
+function clearGroup(obj) {
+  if (!obj) return;
+  obj.traverse(function (o) {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      var mats = o.material.length ? o.material : [o.material];
+      mats.forEach(function (m) { if (m && m.dispose) m.dispose(); });
+    }
+  });
 }
 
 function unmount() {
   state.playing = false;
+  state.ready = false;
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
   if (ro) { ro.disconnect(); ro = null; }
@@ -562,11 +1557,260 @@ function unmount() {
     if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
   }
   if (state.hint && state.hint.parentNode) state.hint.parentNode.removeChild(state.hint);
-  renderer = scene = camera = controls = container = group = null;
-  neuronPts = nodePts = synapseLines = hyphaLines = sporePts = null;
+  if (hud && hud.parentNode) hud.parentNode.removeChild(hud);
+  if (labelLayer && labelLayer.parentNode) labelLayer.parentNode.removeChild(labelLayer);
+  renderer = scene = camera = controls = container = group = examGroup = brainPivot = null;
+  tractLines = tractMat = tractTubes = pulsePts = nodePts = hyphaLines = sporePts = null;
+  calipers = scanRing = hud = eegCanvas = eegCtx = labelLayer = null;
+  labelEls = [];
   nodeIndex = [];
+  fibers = [];
+  infectUniforms = [];
+  hyphaPaths = [];
+  lobeMeshes = {};
+  camFly = null;
+  activeBundles = null;
   state.mounted = false;
   state.hint = null;
+}
+
+function addTissueMesh(mesh, kind) {
+  var frontMat = makeTissueMaterial(kind);
+  var backMat = frontMat.clone();
+  backMat.side = THREE.BackSide;
+  /* Gyri are closed solids; writing depth on back faces hides interior WM tracts. */
+  backMat.depthWrite = false;
+  backMat.uniforms = frontMat.uniforms;
+  mesh.material = frontMat;
+  mesh.renderOrder = 5;
+  mesh.frustumCulled = true;
+  if (mesh.name) lobeMeshes[mesh.name] = mesh;
+  var back = new THREE.Mesh(mesh.geometry, backMat);
+  back.name = (mesh.name || kind) + "_back";
+  back.renderOrder = 1;
+  back.matrixAutoUpdate = false;
+  mesh.add(back);
+  back.matrix.identity();
+  return mesh;
+}
+
+function kindOfName(name) {
+  var n = (name || "").toLowerCase();
+  if (n.indexOf("cerebellum") >= 0) return "cerebellum";
+  if (n.indexOf("brainstem") >= 0) return "brainstem";
+  return "cortex";
+}
+
+function buildFromAssets(gltf, tractList, metaIn, opts) {
+  meta = metaIn || meta;
+  fibers = tractList || [];
+  brainPivot = new THREE.Group();
+  brainPivot.name = "brain";
+  var root = gltf && gltf.scene ? gltf.scene : gltf;
+  if (root) {
+    root.updateMatrixWorld(true);
+    var meshes = [];
+    root.traverse(function (o) {
+      if (o.isMesh) meshes.push(o);
+    });
+    meshes.forEach(function (m) {
+      addTissueMesh(m, kindOfName(m.name));
+      brainPivot.add(m);
+    });
+  }
+  applySeedUniforms();
+  var built = buildTractLines(fibers, state.low);
+  tractLines = built.lines;
+  brainPivot.add(tractLines);
+  tractTubes = buildTractTubes(fibers, state.low);
+  brainPivot.add(tractTubes);
+  pulsePts = buildPulses(tractTubes.userData.used || built.used);
+  brainPivot.add(pulsePts);
+  attachNodes(opts || {});
+  hyphaPaths = buildHyphae(seedList());
+  var empty = new Float32Array(0);
+  hyphaLines = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: true
+    })
+  );
+  hyphaLines.renderOrder = 6;
+  hyphaLines.visible = false;
+  brainPivot.add(hyphaLines);
+  sporePts = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({
+      color: COLOR.glow,
+      size: state.low ? 0.045 : 0.035,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true
+    })
+  );
+  sporePts.renderOrder = 7;
+  sporePts.visible = false;
+  brainPivot.add(sporePts);
+  calipers = buildCalipers();
+  brainPivot.add(calipers);
+  scanRing = buildScanRing();
+  brainPivot.add(scanRing);
+  group.add(brainPivot);
+  buildLabels();
+  state._hudPct = -1;
+  applyInfection(state.progress);
+  updateHud();
+  state.ready = true;
+  if (pendingMode) { setSceneMode(pendingMode); pendingMode = null; }
+  else setSceneMode(state.sceneMode);
+  if (pendingShell) {
+    var ps = pendingShell; pendingShell = null;
+    setShellMode(ps.tab, ps.opts || { instant: true });
+  } else if (state.shellTab) {
+    setShellMode(state.shellTab, { instant: true });
+  }
+}
+
+function proceduralHull() {
+  var geo = new THREE.IcosahedronGeometry(1, state.low ? 3 : 5);
+  var pos = geo.attributes.position;
+  var v = new THREE.Vector3();
+  for (var i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    var d = deformBrain(v.x, v.y, v.z);
+    pos.setXYZ(i, d.x, d.y, d.z);
+  }
+  geo.computeVertexNormals();
+  var mesh = new THREE.Mesh(geo);
+  mesh.name = "cortex_proc";
+  return mesh;
+}
+
+function buildProceduralTracts() {
+  var rng = mulberry32(0xD71);
+  var list = [];
+  function deformSamp() {
+    var u = rng() * Math.PI * 2;
+    var v = Math.acos(2 * rng() - 1);
+    return deformBrain(Math.sin(v) * Math.cos(u), Math.cos(v), Math.sin(v) * Math.sin(u)).multiplyScalar(0.72);
+  }
+  for (var i = 0; i < (state.low ? 80 : 140); i++) {
+    var a = deformSamp(), b = deformSamp();
+    var mid = a.clone().add(b).multiplyScalar(0.5);
+    mid.multiplyScalar(0.45);
+    var n = 28;
+    var pts = new Float32Array(n * 3);
+    for (var k = 0; k < n; k++) {
+      var t = k / (n - 1);
+      var omt = 1 - t;
+      var x = omt * omt * a.x + 2 * omt * t * mid.x + t * t * b.x;
+      var y = omt * omt * a.y + 2 * omt * t * mid.y + t * t * b.y;
+      var z = omt * omt * a.z + 2 * omt * t * mid.z + t * t * b.z;
+      pts[k * 3] = x; pts[k * 3 + 1] = y; pts[k * 3 + 2] = z;
+    }
+    list.push({ name: "proc", pts: pts, n: n });
+  }
+  return list;
+}
+
+function buildProcedural(opts) {
+  meta = meta || {
+    lobes: {},
+    deptLabels: {},
+    deptLobes: {},
+    moldSeeds: [
+      [-0.45, 0.2, 0.5], [0.45, 0.2, 0.5],
+      [-0.55, -0.15, 0.3], [0.55, -0.15, 0.3],
+      [0, 0.1, -0.65], [0, 0.55, 0.05],
+      [-0.2, -0.55, -0.15], [0.2, -0.55, -0.15]
+    ]
+  };
+  fibers = buildProceduralTracts();
+  brainPivot = new THREE.Group();
+  var hull = proceduralHull();
+  addTissueMesh(hull, "cortex");
+  brainPivot.add(hull);
+  /* simple cerebellum / stem */
+  var cb = new THREE.Mesh(new THREE.SphereGeometry(0.38, 20, 16));
+  cb.scale.set(1.15, 0.7, 0.85);
+  cb.position.set(0, -0.72, -0.22);
+  cb.name = "cerebellum_proc";
+  addTissueMesh(cb, "cerebellum");
+  brainPivot.add(cb);
+  var st = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.45, 12));
+  st.position.set(0, -0.85, 0.05);
+  st.name = "brainstem_proc";
+  addTissueMesh(st, "brainstem");
+  brainPivot.add(st);
+  applySeedUniforms();
+  var built = buildTractLines(fibers, state.low);
+  tractLines = built.lines;
+  brainPivot.add(tractLines);
+  tractTubes = buildTractTubes(fibers, state.low);
+  brainPivot.add(tractTubes);
+  pulsePts = buildPulses(tractTubes.userData.used || built.used);
+  brainPivot.add(pulsePts);
+  attachNodes(opts || {});
+  hyphaPaths = buildHyphae(seedList());
+  hyphaLines = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    })
+  );
+  hyphaLines.renderOrder = 6;
+  brainPivot.add(hyphaLines);
+  sporePts = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({
+      color: COLOR.glow, size: 0.035, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+    })
+  );
+  sporePts.renderOrder = 7;
+  brainPivot.add(sporePts);
+  calipers = buildCalipers();
+  brainPivot.add(calipers);
+  scanRing = buildScanRing();
+  brainPivot.add(scanRing);
+  group.add(brainPivot);
+  buildLabels();
+  state._hudPct = -1;
+  applyInfection(state.progress);
+  updateHud();
+  state.ready = true;
+  if (pendingMode) { setSceneMode(pendingMode); pendingMode = null; }
+  else setSceneMode(state.sceneMode);
+  if (pendingShell) {
+    var ps = pendingShell; pendingShell = null;
+    setShellMode(ps.tab, ps.opts || { instant: true });
+  } else if (state.shellTab) {
+    setShellMode(state.shellTab, { instant: true });
+  }
+}
+
+function loadAssets() {
+  var loader = new GLTFLoader();
+  var glbP = new Promise(function (res, rej) {
+    loader.load(ASSET.glb, res, undefined, rej);
+  });
+  var trP = fetch(ASSET.tracts).then(function (r) {
+    if (!r.ok) throw new Error("tracts " + r.status);
+    return r.arrayBuffer().then(parseTracts);
+  });
+  var metaP = fetch(ASSET.meta).then(function (r) {
+    if (!r.ok) throw new Error("meta " + r.status);
+    return r.json();
+  });
+  return Promise.all([glbP, trP, metaP]);
 }
 
 function mount(el, opts) {
@@ -577,24 +1821,33 @@ function mount(el, opts) {
   reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   state.low = opts.low != null ? !!opts.low : qualityLow();
   state.onOpen = opts.onOpen || null;
+  state.onNavigate = opts.onNavigate || state.onNavigate;
   state.visible = opts.visible || null;
+  if (opts.tab) state.shellTab = opts.tab;
   state.progress = opts.progress || 0;
   state.loop = !!opts.loop;
+  state.ready = false;
+  infectUniforms = [];
 
   var w = Math.max(1, el.clientWidth);
   var h = Math.max(1, el.clientHeight);
   scene = new THREE.Scene();
   scene.background = new THREE.Color(COLOR.void);
-  scene.fog = new THREE.FogExp2(COLOR.void, 0.12);
-  camera = new THREE.PerspectiveCamera(38, w / h, 0.05, 30);
-  renderer = new THREE.WebGLRenderer({ antialias: !state.low, alpha: false, powerPreference: state.low ? "low-power" : "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, state.low ? 1.5 : 2));
+  scene.fog = new THREE.FogExp2(COLOR.void, 0.08);
+  camera = new THREE.PerspectiveCamera(38, w / h, 0.05, 40);
+  renderer = new THREE.WebGLRenderer({
+    antialias: !state.low,
+    alpha: false,
+    powerPreference: state.low ? "low-power" : "high-performance"
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, state.low ? 1.6 : 2));
   renderer.setSize(w, h, true);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.domElement.style.display = "block";
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
   renderer.domElement.style.touchAction = "none";
-  renderer.domElement.setAttribute("aria-label", "Trójwymiarowa mapa pamięci firmy w kształcie mózgu");
+  renderer.domElement.setAttribute("aria-label", "Trójwymiarowa mapa pamięci firmy w kształcie mózgu, ze szlakami istoty białej");
   el.innerHTML = "";
   el.appendChild(renderer.domElement);
   var hint = document.createElement("div");
@@ -602,137 +1855,34 @@ function mount(el, opts) {
   hint.hidden = true;
   el.appendChild(hint);
   state.hint = hint;
+  buildHud(el);
 
-  scene.add(new THREE.AmbientLight(0x1A3A48, 1.6));
-  var key = new THREE.DirectionalLight(0xBFF6FA, 1.1);
-  key.position.set(-1.4, 1.8, 1.6);
+  scene.add(new THREE.AmbientLight(0x1A3A48, 1.35));
+  var key = new THREE.DirectionalLight(0xE8F4FF, 1.15);
+  key.position.set(-1.4, 1.9, 1.7);
   scene.add(key);
   var fill = new THREE.DirectionalLight(0x1E7F94, 0.55);
-  fill.position.set(1.6, -0.4, -1.2);
+  fill.position.set(1.6, -0.3, -1.1);
   scene.add(fill);
-  infectLight = new THREE.PointLight(COLOR.mold, 1.2, 8, 1.4);
-  infectLight.position.set(0, -0.4, 0.2);
+  var rim = new THREE.DirectionalLight(0x5CE6F2, 0.35);
+  rim.position.set(0.2, 0.4, -1.8);
+  scene.add(rim);
+  infectLight = new THREE.PointLight(COLOR.mold, 1.0, 8, 1.4);
+  infectLight.position.set(0, -0.2, 0.2);
   scene.add(infectLight);
 
   group = new THREE.Group();
-  group.add(buildHull(state.low));
-  neuronPts = buildAmbientNeurons(state.low);
-  group.add(neuronPts);
-
-  /* surface samples for hyphae: reuse ambient neuron positions on the outer shell */
-  var surface = [];
-  var nAmb = neuronPos.length / 3;
-  for (var i = 0; i < nAmb; i++) {
-    var sx = neuronPos[i * 3], sy = neuronPos[i * 3 + 1], sz = neuronPos[i * 3 + 2];
-    var rr = Math.sqrt(sx * sx + sy * sy + sz * sz);
-    if (rr > 0.55) surface.push(new THREE.Vector3(sx, sy, sz));
-  }
-  buildHyphae(surface, state.low);
-  var empty = new Float32Array(0);
-  hyphaLines = new THREE.LineSegments(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.95,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    })
-  );
-  hyphaLines.visible = false;
-  group.add(hyphaLines);
-  sporePts = new THREE.Points(
-    new THREE.BufferGeometry(),
-    new THREE.PointsMaterial({
-      color: COLOR.glow,
-      size: state.low ? 0.03 : 0.022,
-      transparent: true,
-      opacity: 0.95,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      sizeAttenuation: true
-    })
-  );
-  sporePts.visible = false;
-  group.add(sporePts);
-
-  /* graph nodes + synapses */
-  var rawNodes = (opts.nodes || []).slice();
-  var vis = state.visible;
-  if (vis) rawNodes = rawNodes.filter(function (n) { return vis[n.id]; });
-  nodeIndex = [];
-  var npos = [];
-  var ncol = [];
-  var nsize = [];
-  var idToIdx = {};
-  for (var ni = 0; ni < rawNodes.length; ni++) {
-    var nd = rawNodes[ni];
-    var pos = placeNode(nd);
-    var col = nodeColor(nd);
-    var size = nd.typ === "dzial" ? 0.07 : nd.typ === "sprawa" ? 0.048 : 0.036;
-    idToIdx[nd.id] = nodeIndex.length;
-    nodeIndex.push({ node: nd, pos: pos, base: col, size: size });
-    npos.push(pos.x, pos.y, pos.z);
-    ncol.push(col.r, col.g, col.b);
-    nsize.push(size);
-  }
-  nodeBase = ncol.slice();
-  nodeColors = new Float32Array(ncol);
-  nodeSizes = new Float32Array(nsize);
-  var ngeo = new THREE.BufferGeometry();
-  ngeo.setAttribute("position", new THREE.Float32BufferAttribute(npos, 3));
-  ngeo.setAttribute("color", new THREE.BufferAttribute(nodeColors, 3));
-  ngeo.setAttribute("size", new THREE.BufferAttribute(nodeSizes, 1));
-  var nmat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {},
-    vertexShader: "attribute float size; attribute vec3 color; varying vec3 vC; void main(){ vC=color; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=size*clamp(180.0/-mv.z, 12.0, 64.0); gl_Position=projectionMatrix*mv; }",
-    fragmentShader: "varying vec3 vC; void main(){ vec2 p=gl_PointCoord*2.0-1.0; float d=dot(p,p); if(d>1.0) discard; float a=exp(-d*2.6); gl_FragColor=vec4(vC, a); }"
-  });
-  nodePts = new THREE.Points(ngeo, nmat);
-  group.add(nodePts);
-
-  var epos = [];
-  var ecol = [];
-  var edges = opts.edges || [];
-  var lineCol = new THREE.Color(COLOR.mold2);
-  for (var ei = 0; ei < edges.length; ei++) {
-    var e = edges[ei];
-    var a = idToIdx[e.from], b = idToIdx[e.to];
-    if (a == null || b == null) continue;
-    var pa = nodeIndex[a].pos, pb = nodeIndex[b].pos;
-    var mx = (pa.x + pb.x) * 0.5, my = (pa.y + pb.y) * 0.5, mz = (pa.z + pb.z) * 0.5;
-    var ml = Math.sqrt(mx * mx + my * my + mz * mz) || 1;
-    var lift = 0.12 + 0.10 * Math.min(1, pa.distanceTo(pb));
-    mx += (mx / ml) * lift; my += (my / ml) * lift; mz += (mz / ml) * lift;
-    epos.push(pa.x, pa.y, pa.z, mx, my, mz, mx, my, mz, pb.x, pb.y, pb.z);
-    ecol.push(lineCol.r, lineCol.g, lineCol.b, lineCol.r, lineCol.g, lineCol.b,
-      lineCol.r, lineCol.g, lineCol.b, lineCol.r, lineCol.g, lineCol.b);
-  }
-  synapseLines = new THREE.LineSegments(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.40,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    })
-  );
-  synapseLines.geometry.setAttribute("position", new THREE.Float32BufferAttribute(epos, 3));
-  synapseLines.geometry.setAttribute("color", new THREE.Float32BufferAttribute(ecol, 3));
-  group.add(synapseLines);
-
   scene.add(group);
+  examGroup = buildExamScene();
+  scene.add(examGroup);
+
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
-  controls.minDistance = 1.35;
+  controls.minDistance = 1.2;
   controls.maxDistance = 6.5;
-  controls.autoRotate = !reduceMotion;
-  controls.autoRotateSpeed = 0.55;
+  controls.autoRotate = !reduceMotion && state.sceneMode !== "exam";
+  controls.autoRotateSpeed = 0.45;
   controls.enablePan = false;
   fit();
 
@@ -750,10 +1900,50 @@ function mount(el, opts) {
   } else {
     window.addEventListener("resize", resize);
   }
-  applyInfection(state.progress);
   state.mounted = true;
   tick();
+
+  loadAssets().then(function (pack) {
+    if (!state.mounted || container !== el) return;
+    buildFromAssets(pack[0], pack[1], pack[2], opts);
+    fit();
+  }).catch(function (err) {
+    console.warn("RSS brain: GLB/tracts unavailable, procedural fallback", err);
+    if (!state.mounted || container !== el) return;
+    buildProcedural(opts);
+    fit();
+  });
   return true;
+}
+
+function tick() {
+  if (!state.mounted || !renderer) return;
+  raf = requestAnimationFrame(tick);
+  var dt = clock ? clock.getDelta() : 0.016;
+  var t = clock ? clock.elapsedTime : 0;
+  if (state.playing) {
+    var u = (performance.now() - state.playT0) / (state.playDur || 12000);
+    if (u >= 1) {
+      if (state.loop) {
+        state.playT0 = performance.now();
+        applyInfection(0);
+      } else {
+        applyInfection(1);
+        state.playing = false;
+        window.dispatchEvent(new CustomEvent("rss-brain-play-end"));
+      }
+    } else {
+      var eased = u * u * (3 - 2 * u);
+      applyInfection(eased);
+    }
+  }
+  if (!reduceMotion) updatePulses(t);
+  applyHoloTime(t);
+  tickCam();
+  if (controls) controls.update();
+  projectLabels();
+  drawEeg(t);
+  renderer.render(scene, camera);
 }
 
 function play(opts) {
@@ -783,8 +1973,20 @@ var api = {
   stop: stop,
   setInfection: setInfection,
   setLoop: setLoop,
+  setSceneMode: setSceneMode,
+  getSceneMode: function () { return state.sceneMode; },
+  setShellMode: setShellMode,
+  setLibraryMode: setLibraryMode,
+  setHighlight: setHighlight,
+  focusLobe: focusLobe,
+  setGraph: setGraph,
+  setOnNavigate: setOnNavigate,
+  tabToLobe: TAB_LOBE,
+  lobeToTab: LOBE_TAB,
+  getShellTab: function () { return state.shellTab; },
   getProgress: function () { return state.progress; },
   isMounted: function () { return state.mounted; },
+  isReady: function () { return state.ready; },
   canWebGL: canWebGL
 };
 

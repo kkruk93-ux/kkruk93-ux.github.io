@@ -1,5 +1,5 @@
 /* Service worker PWA — cache powłoki. Nigdy nie cache'uje Apps Script ani URL z tokenem. */
-var CACHE = "rss-v2-4";
+var CACHE = "rss-v2-6";
 var PRECACHE = [
   "./",
   "./index.html",
@@ -14,6 +14,17 @@ var PRECACHE = [
   "./lib/three/addons/controls/OrbitControls.js",
   "./lib/three/LICENSE.txt",
   "./brain3d.js",
+  "./lib/three/addons/loaders/GLTFLoader.js",
+  "./lib/three/addons/utils/BufferGeometryUtils.js",
+  "./lib/three/addons/lines/Line2.js",
+  "./lib/three/addons/lines/LineMaterial.js",
+  "./lib/three/addons/lines/LineGeometry.js",
+  "./lib/three/addons/lines/LineSegments2.js",
+  "./lib/three/addons/lines/LineSegmentsGeometry.js",
+  "./assets/brain/brain-cortex.glb",
+  "./assets/brain/tracts.bin",
+  "./assets/brain/brain-meta.json",
+  "./assets/brain/ATTRIBUTION.txt",
   "./data/zespol.js",
   "./data/statusy.js",
   "./data/statusy.json",

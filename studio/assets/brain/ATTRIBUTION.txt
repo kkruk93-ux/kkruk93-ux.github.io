@@ -1,0 +1,29 @@
+3D brain mesh
+===============
+Title:  3D Reference Organ for Brain, Male, v1.3
+Authors: Kristen Browne; Heidi Schlehlein (2023)
+Publisher: Human Reference Atlas / HuBMAP
+DOI: https://doi.org/10.48539/HBM929.XKCL.339
+NIH 3D: https://3d.nih.gov/entries/20960
+Library: https://humanatlas.io/3d-reference-library
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+         https://creativecommons.org/licenses/by/4.0/
+
+This reference organ was created using data from the
+Allen Human Reference Atlas – 3D, 2020 (Ding et al., 2016).
+The anatomical structures were mirrored to a whole brain and
+resized to the Visible Human Male.
+
+Adaptations by Rovi & Shadow Studio (2026):
+  - kept outer cortex, cerebellum and brainstem meshes
+  - merged by lobe / hemisphere
+  - reduced polygon count for mobile
+  - generated stylized (illustrative, not measured) DTI-like
+    white-matter streamlines for visualization
+
+No endorsement by the authors, Human Reference Atlas, HuBMAP,
+the Allen Institute or NIH is implied.
+
+White-matter fibers in this app are procedural visualization
+aids, not a tractography atlas and not derived from a measured
+DTI dataset.

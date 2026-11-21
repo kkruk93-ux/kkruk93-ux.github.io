@@ -59,9 +59,12 @@
   var q = "";
   var listMode = false;
   var biblMode = "3d";
+  var MODE_KEY = "rss-bibl-mode-v3";
   try {
-    var savedMode = w.localStorage.getItem("rss-bibl-mode");
+    /* v3: always open on the 3D brain unless the user picked 2D/list after this bump. */
+    var savedMode = w.localStorage.getItem(MODE_KEY);
     if (savedMode === "2d" || savedMode === "3d" || savedMode === "list") biblMode = savedMode;
+    else biblMode = "3d";
   } catch (e) {}
   listMode = biblMode === "list";
 
@@ -72,7 +75,7 @@
     if (m === "3d" && !canBrain()) m = "2d";
     biblMode = m;
     listMode = m === "list";
-    try { w.localStorage.setItem("rss-bibl-mode", m); } catch (e2) {}
+    try { w.localStorage.setItem(MODE_KEY, m); } catch (e2) {}
   }
 
   function setLabel(tab) {
@@ -291,6 +294,8 @@
           '<label class="infect-loop"><input type="checkbox" id="biblInfectLoop"> Pętla</label>' +
           '<input type="range" id="biblInfectSlider" min="0" max="100" value="0" aria-label="Postęp infekcji Blue Mold">' +
           '<span id="biblInfectPct">0%</span>' +
+          '<button type="button" class="chip on" id="biblSceneMold">Pleśń</button>' +
+          '<button type="button" class="chip" id="biblSceneExam">Badanie kosmitów</button>' +
         '</div>' +
         '<div class="filters" id="biblFilt">' +
           [["sprawa","Sprawy"],["krotki","Shorty"],["long","Longi"],["tiktok","TikTok"],["ksiazka","Książki"],["piosenka","Piosenki"],["gra","Gry"],["dzial","Działy"],["decyzja","Decyzje"]].map(function (p) {
@@ -330,24 +335,31 @@
     }
 
     function mountBrain() {
-      var el = $("#brain3d");
       var api = w.RSS && w.RSS.brain3d;
-      if (!el || !api) return;
+      if (!api) return;
+      if (!api.isMounted || !api.isMounted()) {
+        if (!mountWorld()) {
+          setBiblMode("2d");
+          painted.bibl = false;
+          renderBibl();
+          return;
+        }
+      }
       var vis = visibleIds();
       var sl = $("#biblInfectSlider");
-      var ok = api.mount(el, {
-        nodes: bibl.wezly || [],
-        edges: bibl.krawedzie || [],
-        visible: vis,
-        onOpen: openNode,
-        progress: sl ? (parseFloat(sl.value) || 0) / 100 : 0,
-        loop: !!("#biblInfectLoop" && $("#biblInfectLoop") && $("#biblInfectLoop").checked)
-      });
-      if (!ok) {
-        setBiblMode("2d");
-        painted.bibl = false;
-        renderBibl();
+      if (api.setGraph) {
+        api.setGraph({
+          nodes: bibl.wezly || [],
+          edges: bibl.krawedzie || [],
+          visible: vis,
+          onOpen: openNode
+        });
       }
+      if (api.setLibraryMode) api.setLibraryMode(true);
+      if (api.setShellMode) api.setShellMode("bibl");
+      if (sl && api.setInfection) api.setInfection((parseFloat(sl.value) || 0) / 100);
+      if (api.setLoop && $("#biblInfectLoop")) api.setLoop(!!$("#biblInfectLoop").checked);
+      if (api.resize) api.resize();
     }
 
     function applyBiblView() {
@@ -358,26 +370,28 @@
         b.classList.toggle("on", (id === "bibl3d" && biblMode === "3d") || (id === "bibl2d" && biblMode === "2d") || (id === "biblList" && biblMode === "list"));
       });
       if (biblMode === "list") {
-        if (w.RSS.brain3d && w.RSS.brain3d.isMounted && w.RSS.brain3d.isMounted()) w.RSS.brain3d.unmount();
+        document.body.classList.add("brain-hidden");
         if (b3) b3.hidden = true;
         if (cyEl) cyEl.hidden = true;
         if (list) list.hidden = false;
         if (inf) inf.hidden = true;
         refreshList();
       } else if (biblMode === "2d") {
-        if (w.RSS.brain3d && w.RSS.brain3d.isMounted && w.RSS.brain3d.isMounted()) w.RSS.brain3d.unmount();
+        document.body.classList.add("brain-hidden");
         if (b3) b3.hidden = true;
         if (cyEl) cyEl.hidden = false;
         if (list) list.hidden = true;
         if (inf) inf.hidden = true;
         mountCy();
       } else {
+        document.body.classList.remove("brain-hidden");
         if (cyEl) cyEl.hidden = true;
         if (list) list.hidden = true;
-        if (b3) b3.hidden = false;
+        if (b3) b3.hidden = true; /* shared #brain-world canvas */
         if (inf) inf.hidden = false;
         mountBrain();
       }
+      if (w.RSS.brain3d && w.RSS.brain3d.resize) setTimeout(function () { w.RSS.brain3d.resize(); }, 40);
     }
 
     $$("#biblFilt [data-f]").forEach(function (b) {
@@ -430,6 +444,20 @@
     $("#biblInfectLoop") && ($("#biblInfectLoop").onchange = function () {
       if (w.RSS.brain3d && w.RSS.brain3d.setLoop) w.RSS.brain3d.setLoop(this.checked);
     });
+    function syncSceneChips(mode) {
+      var m = $("#biblSceneMold"), x = $("#biblSceneExam");
+      if (m) m.classList.toggle("on", mode !== "exam");
+      if (x) x.classList.toggle("on", mode === "exam");
+    }
+    $("#biblSceneMold") && ($("#biblSceneMold").onclick = function () {
+      if (w.RSS.brain3d && w.RSS.brain3d.setSceneMode) w.RSS.brain3d.setSceneMode("mold");
+      syncSceneChips("mold");
+    });
+    $("#biblSceneExam") && ($("#biblSceneExam").onclick = function () {
+      if (w.RSS.brain3d && w.RSS.brain3d.setSceneMode) w.RSS.brain3d.setSceneMode("exam");
+      syncSceneChips("exam");
+    });
+    if (w.RSS.brain3d && w.RSS.brain3d.getSceneMode) syncSceneChips(w.RSS.brain3d.getSceneMode());
     refreshList();
     applyBiblView();
   }
@@ -721,11 +749,81 @@
     });
   }
 
+  function lobeTabFor(lobe) {
+    var map = (w.RSS && w.RSS.brain3d && w.RSS.brain3d.lobeToTab) || {};
+    var tab = map[lobe];
+    if (tab === "cmd" && !(w.RSS.isSzef && w.RSS.isSzef())) tab = "biuro";
+    if (tab === "list" && !(w.RSS.isSzef && w.RSS.isSzef())) tab = "org";
+    if ((tab === "zuz" || tab === "dec") && !(w.RSS.isSzef && w.RSS.isSzef())) tab = "org";
+    return tab;
+  }
+
+  function mountWorld() {
+    var el = document.getElementById("brain-world");
+    var api = w.RSS && w.RSS.brain3d;
+    if (!el || !api || !api.canWebGL || !api.canWebGL()) {
+      document.body.classList.remove("brain-shell");
+      if (el) el.hidden = true;
+      return false;
+    }
+    document.body.classList.add("brain-shell");
+    el.hidden = false;
+    el.setAttribute("aria-hidden", "false");
+    var vis = (bibl && biblMode === "3d") ? visibleIds() : null;
+    var opts = {
+      nodes: (bibl && bibl.wezly) || [],
+      edges: (bibl && bibl.krawedzie) || [],
+      visible: vis,
+      onOpen: openNode,
+      onNavigate: function (lobe, tab) {
+        tab = tab || lobeTabFor(lobe);
+        if (tab && w.RSS.goTab) w.RSS.goTab(tab);
+      },
+      tab: document.body.getAttribute("data-view") || "biuro"
+    };
+    if (api.isMounted && api.isMounted()) {
+      if (api.setOnNavigate) api.setOnNavigate(opts.onNavigate);
+      if (api.setGraph && bibl) api.setGraph(opts);
+      api.resize && api.resize();
+      return true;
+    }
+    var ok = api.mount(el, opts);
+    if (!ok) {
+      document.body.classList.remove("brain-shell");
+      el.hidden = true;
+      return false;
+    }
+    return true;
+  }
+
+  function placeFloor() {
+    var slot = document.getElementById("biuroSlot");
+    var floor = document.getElementById("floor-wrap");
+    if (!slot || !floor) return;
+    if (document.body.classList.contains("brain-shell")) {
+      if (floor.parentNode !== slot) slot.appendChild(floor);
+    } else if (floor.parentNode === slot) {
+      document.body.insertBefore(floor, document.getElementById("stage"));
+    }
+  }
+
+  function syncBrainShell(tab) {
+    var api = w.RSS && w.RSS.brain3d;
+    var shell = document.body.classList.contains("brain-shell");
+    if (!shell && canBrain()) mountWorld();
+    shell = document.body.classList.contains("brain-shell");
+    var hide = !shell || (tab === "bibl" && biblMode !== "3d");
+    document.body.classList.toggle("brain-hidden", hide);
+    if (api && api.setShellMode && shell) api.setShellMode(tab);
+    if (api && api.setLibraryMode) api.setLibraryMode(tab === "bibl" && biblMode === "3d");
+    placeFloor();
+    if (api && api.resize) setTimeout(function () { api.resize(); }, 40);
+  }
+
   function render(tab) {
     setLabel(tab);
-    if (tab !== "bibl" && w.RSS && w.RSS.brain3d && w.RSS.brain3d.isMounted && w.RSS.brain3d.isMounted()) {
-      w.RSS.brain3d.unmount();
-    }
+    syncBrainShell(tab);
+    if (tab === "biuro") { placeFloor(); return; }
     if (tab === "bibl") { renderBibl(); return; }
     if (tab === "art") { renderArt(); return; }
     if (tab === "vid") { renderVid(); return; }
@@ -762,7 +860,7 @@
   }
 
   w.RSS = w.RSS || {};
-  w.RSS.views = { render: render, setLabel: setLabel, labels: LABELS, openNode: openNode, getCy: function () { return cy; } };
+  w.RSS.views = { render: render, setLabel: setLabel, labels: LABELS, openNode: openNode, getCy: function () { return cy; }, syncBrainShell: syncBrainShell, mountWorld: mountWorld };
   w.addEventListener("rss-brain-progress", function (ev) {
     var v = ev.detail && ev.detail.progress;
     if (v == null) return;
@@ -771,7 +869,10 @@
     if (pct) pct.textContent = Math.round(v * 100) + "%";
   });
   w.addEventListener("rss-brain-ready", function () {
-    if ((document.body.getAttribute("data-view") || "") === "bibl" && biblMode === "3d") {
+    mountWorld();
+    var tab = document.body.getAttribute("data-view") || "biuro";
+    syncBrainShell(tab);
+    if (tab === "bibl" && biblMode === "3d") {
       painted.bibl = false;
       renderBibl();
     }

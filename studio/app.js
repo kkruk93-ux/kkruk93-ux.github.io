@@ -504,8 +504,11 @@
       if (on) v.removeAttribute("hidden");
       else v.setAttribute("hidden", "");
     });
-    if (t !== "biuro" && t !== "cmd" && t !== "list" && t !== "settings" && w.RSS.views) w.RSS.views.render(t);
-    else if (w.RSS.views && w.RSS.views.setLabel) w.RSS.views.setLabel(t);
+    if (t !== "cmd" && t !== "list" && t !== "settings" && w.RSS.views) w.RSS.views.render(t);
+    else {
+      if (w.RSS.views && w.RSS.views.setLabel) w.RSS.views.setLabel(t);
+      if (w.RSS.views && w.RSS.views.syncBrainShell) w.RSS.views.syncBrainShell(t);
+    }
     syncDock();
     try { if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t); } catch (e) {}
     if (t === "biuro") w.requestAnimationFrame(function () { fitFeature(); });
@@ -573,6 +576,7 @@
     var start = (location.hash || "").replace(/^#/, "");
     if (start && start !== "biuro") goTab(start);
     else showPane("biuro");
+    if (w.RSS.views && w.RSS.views.mountWorld) w.RSS.views.mountWorld();
     syncDock();
   }
 
